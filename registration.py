@@ -1,6 +1,7 @@
 from tkinter import *
 import tkinter as tk
 from tkcalendar import DateEntry
+from database import Database
 
 class Competitor:
     def __init__(self, bib, last, first, dob, gender, zip, discipline, disability, season_pass, liability, liability_date):
@@ -20,7 +21,7 @@ class Registration(tk.Toplevel):
     alive = False
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.title("GenTech Apps - Ski Racing")
+        self.title("Registration")
         self.geometry("300x400")
         self.minsize(300, 400)
         self.maxsize(1500, 900)
@@ -76,13 +77,19 @@ class Registration(tk.Toplevel):
         ]
 
         ### datatype of menu text
-        self.gender_entry_value = StringVar()
+        gender_entry = StringVar()
   
         ### initial menu text
-        self.gender_entry_value.set("Male")
+        gender_entry.set("Male")
   
         ### Create Dropdown menu
-        drop = OptionMenu( frameregister , self.gender_entry_value , *gender )
+        drop = OptionMenu( frameregister , gender_entry , *gender )
+        self.gender_entry_value = 0
+        match gender_entry:
+            case "Male":
+                self.gender_entry_value = 0
+            case "Female":
+                self.gender_entry_value = 1
         drop.grid(column=2, row=5)
 
         ## Zip
@@ -105,13 +112,23 @@ class Registration(tk.Toplevel):
         ]
 
         ### datatype of menu text
-        self.discipline_entry_value = StringVar()
+        discipline_entry = StringVar()
   
         ### initial menu text
-        self.discipline_entry_value.set("Alpine")
+        discipline_entry.set("Alpine")
   
         ### Create Dropdown menu
-        drop = OptionMenu( frameregister , self.discipline_entry_value , *discipline )
+        drop = OptionMenu( frameregister , discipline_entry , *discipline )
+        self.discipline_entry_value = 0
+        match discipline_entry:
+            case "Alpine":
+                self.discipline_entry_value = 0
+            case "Snowboard":
+                self.discipline_entry_value = 1
+            case "Telemark":
+                self.discipline_entry_value = 2
+            case "Monoski":
+                self.discipline_entry_value = 3
         drop.grid(column=2, row=7)
 
         ## Disability
@@ -126,13 +143,23 @@ class Registration(tk.Toplevel):
         ]
 
         ### datatype of menu text
-        self.disability_entry_value = StringVar()
+        disability_entry = StringVar()
   
         ### initial menu text
-        self.disability_entry_value.set("None")
+        disability_entry.set("None")
   
         ### Create Dropdown menu
-        drop = OptionMenu( frameregister , self.disability_entry_value , *disability )
+        drop = OptionMenu( frameregister , disability_entry , *disability )
+        self.disability_entry_value = 0
+        match disability_entry:
+            case "None":
+                self.disability_entry_value = 0
+            case "Blind":
+                self.disability_entry_value = 1
+            case "Paralysis":
+                self.disability_entry_value = 2
+            case "Mental":
+                self.disability_entry_value = 3
         drop.grid(column=2, row=8)
 
         # Mountain Specific Forms
@@ -140,12 +167,14 @@ class Registration(tk.Toplevel):
         frameforms.grid(column=1, row=2, sticky=(N, E, S, W))
 
         ## Season Pass
-        self.season_pass_entry_value = tk.Checkbutton(frameforms,text="Has season pass", onvalue=1, offvalue=0)
-        self.season_pass_entry_value.grid(column=1, row=1, sticky=(N,E,S,W))
+        self.season_pass_entry_value = tk.IntVar()
+        self.season_pass_entry = tk.Checkbutton(frameforms,text="Has season pass", onvalue=1, offvalue=0, variable=self.season_pass_entry_value)
+        self.season_pass_entry.grid(column=1, row=1, sticky=(N,E,S,W))
 
         ## Liability Waiver
-        self.liability_signed_entry_value = tk.Checkbutton(frameforms,text="Has signed waiver", onvalue=1, offvalue=0)
-        self.liability_signed_entry_value.grid(column=1, row=2, sticky=(N,E,S,W))
+        self.liability_signed_entry_value = tk.IntVar()
+        self.liability_signed_entry = tk.Checkbutton(frameforms,text="Has signed waiver", onvalue=1, offvalue=0, variable=self.liability_signed_entry_value)
+        self.liability_signed_entry.grid(column=1, row=2, sticky=(N,E,S,W))
         last_signed_label = Label(frameforms, text="Last Signed")
         last_signed_label.grid(column=1, row=3)
 
@@ -154,7 +183,7 @@ class Registration(tk.Toplevel):
 
         # Button
         framebutton = Frame(frame, borderwidth=2, relief="solid")
-        framebutton.grid(column=1, row=2, sticky=(N, E, S, W))
+        framebutton.grid(column=1, row=3, sticky=(N, E, S, W))
         ## Save & New Entry
         save_new_button = Button(framebutton, text="Save & New", command=self.save_new)
         save_new_button.grid(column=1, row=1, sticky=(E))
@@ -172,12 +201,29 @@ class Registration(tk.Toplevel):
         self.last_entry.delete(0, END)
         self.first_entry.delete(0, END) 
         self.zip_entry.delete(0, END) 
+        
+    def save_participant(self):
+        Database.add_participant(
+            self.bib_entry.get(), 
+            self.last_entry.get(), 
+            self.first_entry.get(), 
+            self.dob_entry_value.get_date(),
+            self.gender_entry_value, 
+            self.zip_entry_value.get(),
+            self.discipline_entry_value, 
+            self.disability_entry_value, 
+            self.season_pass_entry_value.get(), 
+            self.liability_signed_entry_value.get(), 
+            self.last_signed_entry_value.get_date())
+        
     
     def save_close(self):
+        self.save_participant()
         self.destroy()
 
     def save_new(self):
-        self.destroy()
+        self.save_participant()
+        self.clear_text()
 
     def destroy(self):
         # Restore the attribute on close.
