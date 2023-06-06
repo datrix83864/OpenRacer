@@ -1,74 +1,87 @@
-import tkinter as tk
+
+from tkinter import *
 from tkinter import ttk
+import tkinter as tk
 from registration import *
 from database import Database
+from timing import Timing
 import sqlite3
 root = Tk()
-class MainWindow:
-    
-    def show_participants(self):
-        conn = sqlite3.connect("ski_racing_database.db")
-        cur = conn.cursor()
-        cur.execute("SELECT last_name, first_name, dob from athletes")
-        
-        rows = cur.fetchall()
-        for row in rows:
-            print(row)
-            tree.insert("", tk.END, values=row)
-        conn.close()
-
-    def __init__(self,root):        
-        root.geometry("500x400")
-        root.minsize(400, 300)
-        root.maxsize(800, 600)
-        root.title("GenTech Apps - Ski Racing")
-        frame = Frame(root, borderwidth=2,relief="flat")
-        frame.grid(column=1, row=1, sticky=(N, E, S, W))
-        
-        self.button_open = ttk.Button(
-            frame,
-            text="Registration",
-            command=self.open_registration_window
-        )
-        self.button_open.grid(column=1, row=1)
-        tree = ttk.Treeview(frame, column=("c1", "c2", "c3"), show='headings')
-
-        tree.column("#1", anchor=tk.CENTER)
-
-        tree.heading("#1", text="ID")
-
-        tree.column("#2", anchor=tk.CENTER)
-
-        tree.heading("#2", text="FNAME")
-
-        tree.column("#3", anchor=tk.CENTER)
-
-        tree.heading("#3", text="LNAME")
-
-        tree.grid(column = 1, row = 2)
-        conn = sqlite3.connect("ski_racing_database.db")
-        cur = conn.cursor()
-        cur.execute("SELECT last_name, first_name, dob from athletes")
-        
-        rows = cur.fetchall()
-        for row in rows:
-            print(row)
-            tree.insert("", tk.END, values=row)
-        conn.close()
-        button1 = tk.Button(text="Display data", command=self.show_participants)
-
-        button1.grid(column=1, row=3)
-                
-    def open_registration_window(self):
-        if not Registration.alive:
-            self.registration_window = Registration()
-        else:
-            self.registration_window.focus_set()
-            
-
-
 Database()
-MainWindow(root)
+
+def edit():
+    selected_item = tree.selection()[0]
+    tree.item(selected_item)
+
+def competitor():
+    for row in tree.get_children():
+        tree.delete(row)
+    conn = sqlite3.connect("ski_racing_database.db")
+    
+    cur = conn.cursor()
+    cur.execute("SELECT universal_bib, first_name, last_name from athletes")
+    rows = cur.fetchall()
+    for row in rows:
+        tree.insert("", tk.END, values=row)
+    conn.close()
+
+def open_registration_window():
+    if not Registration.alive:
+        registration_window = Registration()
+    else:
+        registration_window.focus_set()
+
+def open_timing_window():
+    if not Timing.alive:
+        timing_window = Timing()
+    else:
+        timing_window.focus_set()
+
+root.geometry("700x400")
+root.minsize(400, 300)
+root.maxsize(800, 600)
+root.title("GenTech Apps - Ski Racing")
+frame = Frame(root, borderwidth=2,relief="flat")
+frame.grid(column=5, row=2, sticky=(N, E, S, W))
+
+button_register = ttk.Button(
+    frame,
+    text="Registration",
+    command=open_registration_window
+)
+button_register.grid(column=1, row=1)
+
+button_timing = ttk.Button(
+    frame,
+    text="Timing",
+    command=open_timing_window
+)
+
+button_timing.grid(column=2, row=1)
+
+tree = ttk.Treeview(frame, column=("c1", "c2", "c3"), show='headings')
+
+tree.column("#1", anchor=tk.W)
+
+tree.heading("#1", text="ID")
+
+tree.column("#2", anchor=tk.W)
+
+tree.heading("#2", text="First Name")
+
+tree.column("#3", anchor=tk.W)
+
+tree.heading("#3", text="Last Name")
+
+tree.grid(column = 1, row = 2, columnspan=4)
+competitor()
+
+button1 = tk.Button(text="Display data", command=competitor)
+button1.grid(column=1, row=4)
+
+edit_btn = tk.Button(text="Edit", command=edit)
+edit_btn.grid(column=2, row=4)
+
 # main_window = MainWindow()
 # main_window.mainloop()
 root.mainloop()
