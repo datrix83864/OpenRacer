@@ -28,18 +28,18 @@ def competitor():
 def open_registration_window():
     if not Registration.alive:
         registration_window = Registration()
-    else:
-        registration_window.focus_set()
+    registration_window.focus_set()
+    
 
 def open_timing_window():
     if not Timing.alive:
         timing_window = Timing()
-    else:
-        timing_window.focus_set()
+    timing_window.focus_set()
+    
 
 root.geometry("700x400")
 root.minsize(400, 300)
-root.maxsize(800, 600)
+#root.maxsize(800, 600)
 root.title("GenTech Apps - Ski Racing")
 frame = Frame(root, borderwidth=2,relief="flat")
 frame.grid(column=5, row=2, sticky=(N, E, S, W))
@@ -76,11 +76,13 @@ tree.heading("#3", text="Last Name")
 tree.grid(column = 1, row = 2, columnspan=4)
 competitor()
 
-button1 = tk.Button(text="Display data", command=competitor)
+button1 = ttk.Button(frame, text="Display data", command=competitor)
 button1.grid(column=1, row=4)
 
-edit_btn = tk.Button(text="Edit", command=edit)
+edit_btn = ttk.Button(frame, text="Edit", command=edit)
 edit_btn.grid(column=2, row=4)
+
+
 
 # main_window = MainWindow()
 # main_window.mainloop()

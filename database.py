@@ -3,6 +3,7 @@ from tkinter import ttk
 import sqlite3
 import pandas as pd
 import uuid
+from datetime import datetime
 
 class Database():
     def __init__(self):
@@ -46,8 +47,12 @@ class Database():
         c.execute('''
                 CREATE TABLE IF NOT EXISTS result
                 ([result_uuid] BLOB PRIMARY KEY,
+                [race_id] BLOB,
+                [bib] BLOB,
                 [local_athlete_uuid] BLOB,
                 [athlete_uuid] BLOB,
+                [start_time] TEXT,
+                [end_time] TEXT,
                 [result] TEXT,
                 [course] TEXT
                 )
@@ -84,6 +89,15 @@ class Database():
             return None
         else:
             return result
+    
+    def store_result(race_id, result_uuid, display_bib, local_id, world_id, start_time, stop_time, result, course):
+        conn = sqlite3.connect("ski_racing_database.db")
+        c = conn.cursor()
+        
+        c.execute("INSERT INTO result (result_uuid, race_id, bib, local_athlete_uuid, athlete_uuid, start_time, end_time, result, course) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (result_uuid, race_id, display_bib, local_id, world_id, start_time, stop_time, result, course))
+
+        conn.commit()
+        conn.close()
 
         
     
