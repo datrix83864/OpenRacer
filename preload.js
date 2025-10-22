@@ -13,23 +13,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdateFromFile: () => ipcRenderer.invoke('install-update-from-file')
 });
 
-// This exposes the timing module to the UI safely
-
-const { contextBridge, ipcRenderer } = require('electron');
-
-// Expose protected methods that allow the renderer process to use
-// ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('electronAPI', {
-  // Existing methods...
-  checkInternet: () => ipcRenderer.invoke('check-internet'),
-  checkUpdates: () => ipcRenderer.invoke('check-updates'),
-  skipVersion: (version) => ipcRenderer.invoke('skip-version', version),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
-  saveConfig: (config) => ipcRenderer.invoke('save-config', config),
-  openUpdateDialog: (updateInfo) => ipcRenderer.invoke('open-update-dialog', updateInfo),
-  installUpdateFromFile: () => ipcRenderer.invoke('install-update-from-file')
-});
-
 // Add separate namespace for race timing
 contextBridge.exposeInMainWorld('raceTiming', {
   // Race session management
