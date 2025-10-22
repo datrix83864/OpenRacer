@@ -1,2 +1,40 @@
-*.pyc
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+out/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Electron
+*.log
+npm-debug.log*
+
+# User data (don't commit user configs)
 *.db
+*.sqlite
+config/app-config.json
+
+# Environment files
+.env
+.env.local
+
+# Test coverage
+coverage/
+
+# Temporary files
+*.tmp
+.cache/
