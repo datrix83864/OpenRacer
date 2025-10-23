@@ -74,9 +74,10 @@ class DualTimingPanel {
       leftPanel.style.display = 'none';
       rightPanel.style.display = 'flex';
     } else {
+      // Default to dual mode - show both panels
       container.classList.add('layout-dual');
-      leftPanel.style.display = this.courses.left.enabled ? 'flex' : 'none';
-      rightPanel.style.display = this.courses.right.enabled ? 'flex' : 'none';
+      leftPanel.style.display = 'flex';
+      rightPanel.style.display = 'flex';
     }
   }
 
@@ -711,10 +712,37 @@ class DualTimingPanel {
   }
 
   showNewRacerModal(query, course) {
-    // TODO: Implement new racer registration modal
-    window.showNotification(
-      'Racer Not Found', 
-      `No racer found for "${query}". New racer registration coming soon!`
+    // Open the racer registration modal
+    window.racerRegistrationModal.open(
+      query, // Pre-fill bib if it's a number
+      course,
+      async (racer, course) => {
+        // Callback after racer is saved - automatically start their run
+        try {
+          const run = await window.raceTiming.startRun(racer.id, racer.bibNumber, {
+            course: course,
+            racerName: `${racer.firstName} ${racer.lastName}`,
+            gender: racer.gender,
+            discipline: racer.discipline
+          });
+
+          if (run.error) {
+            window.showNotification('Error', run.error);
+            return;
+          }
+
+          window.showNotification(
+            'Run Started',
+            `${racer.firstName} ${racer.lastName} (#${racer.bibNumber}) started on ${this.courses[course].name}`
+          );
+
+          this.selectedRacers[course] = racer.id;
+          this.toggleButtons(course, true);
+        } catch (err) {
+          console.error('Failed to start run after registration:', err);
+          window.showNotification('Error', 'Racer registered but failed to start run');
+        }
+      }
     );
   }
 
