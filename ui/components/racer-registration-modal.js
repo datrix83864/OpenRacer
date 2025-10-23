@@ -515,7 +515,7 @@ class RacerRegistrationModal {
   toggleSection(contentId, headerId) {
     const content = document.getElementById(contentId);
     const header = document.getElementById(headerId);
-    
+
     content.classList.toggle('collapsed');
     header.classList.toggle('collapsed');
   }
@@ -611,12 +611,19 @@ class RacerRegistrationModal {
     document.getElementById('racerEmail').value = '';
     document.getElementById('racerPhone').value = '';
     document.getElementById('racerHasPass').checked = false;
-    
+
     document.querySelectorAll('.disability-checkbox').forEach(checkbox => {
       checkbox.checked = false;
     });
   }
 }
 
-// Create global instance
-window.racerRegistrationModal = new RacerRegistrationModal();
+// Create global instance when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    window.racerRegistrationModal = new RacerRegistrationModal();
+  });
+} else {
+  // DOM is already ready
+  window.racerRegistrationModal = new RacerRegistrationModal();
+}

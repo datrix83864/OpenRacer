@@ -16,64 +16,115 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Add separate namespace for race timing
 contextBridge.exposeInMainWorld('raceTiming', {
   // Race session management
-  startRace: (raceId, raceName, courseData) => 
+  startRace: (raceId, raceName, courseData) =>
     ipcRenderer.invoke('timing:start-race', raceId, raceName, courseData),
-  
+
   // Run management
-  startRun: (racerId, bibNumber, metadata) => 
+  startRun: (racerId, bibNumber, metadata) =>
     ipcRenderer.invoke('timing:start-run', racerId, bibNumber, metadata),
-  
-  finishRun: (racerId, finishTime) => 
+
+  finishRun: (racerId, finishTime) =>
     ipcRenderer.invoke('timing:finish-run', racerId, finishTime),
-  
-  markDNF: (racerId, reason, gate) => 
+
+  markDNF: (racerId, reason, gate) =>
     ipcRenderer.invoke('timing:mark-dnf', racerId, reason, gate),
-  
-  disqualify: (racerId, reason) => 
+
+  disqualify: (racerId, reason) =>
     ipcRenderer.invoke('timing:disqualify', racerId, reason),
-  
-  addPenalty: (racerId, seconds, reason) => 
+
+  addPenalty: (racerId, seconds, reason) =>
     ipcRenderer.invoke('timing:add-penalty', racerId, seconds, reason),
-  
+
   // Data retrieval
-  getActiveRuns: () => 
+  getActiveRuns: () =>
     ipcRenderer.invoke('timing:get-active'),
-  
-  getCompletedRuns: (sortBy) => 
+
+  getCompletedRuns: (sortBy) =>
     ipcRenderer.invoke('timing:get-completed', sortBy),
-  
-  getLeaderboard: () => 
+
+  getLeaderboard: () =>
     ipcRenderer.invoke('timing:get-leaderboard'),
-  
-  getStatistics: () => 
+
+  getStatistics: () =>
     ipcRenderer.invoke('timing:get-stats'),
-  
+
   // Export and reset
-  export: (format) => 
+  export: (format) =>
     ipcRenderer.invoke('timing:export', format),
-  
-  reset: () => 
+
+  reset: () =>
     ipcRenderer.invoke('timing:reset'),
-  
+
   // Event listeners for real-time updates
   onRunStarted: (callback) => {
     ipcRenderer.on('timing:run-started', (event, run) => callback(run));
     // Return unsubscribe function
     return () => ipcRenderer.removeListener('timing:run-started', callback);
   },
-  
+
   onRunCompleted: (callback) => {
     ipcRenderer.on('timing:run-completed', (event, run) => callback(run));
     return () => ipcRenderer.removeListener('timing:run-completed', callback);
   },
-  
+
   onRunDNF: (callback) => {
     ipcRenderer.on('timing:run-dnf', (event, run) => callback(run));
     return () => ipcRenderer.removeListener('timing:run-dnf', callback);
   },
-  
+
   onRunDisqualified: (callback) => {
     ipcRenderer.on('timing:run-disqualified', (event, data) => callback(data));
     return () => ipcRenderer.removeListener('timing:run-disqualified', callback);
   }
+});
+
+// Add separate namespace for racer database
+contextBridge.exposeInMainWorld('racerDB', {
+  // Search for a racer
+  search: (query, options) =>
+    ipcRenderer.invoke('racers:search', query, options),
+
+  // Get autocomplete suggestions
+  autocomplete: (query, limit) =>
+    ipcRenderer.invoke('racers:autocomplete', query, limit),
+
+  // Save a racer
+  save: (racerData) =>
+    ipcRenderer.invoke('racers:save', racerData),
+
+  // Get next available bib number
+  getNextBib: () =>
+    ipcRenderer.invoke('racers:next-bib'),
+
+  // Get today's racers
+  getTodaysRacers: () =>
+    ipcRenderer.invoke('racers:today'),
+
+  // Check if racer needs waiver
+  needsWaiver: (racerId) =>
+    ipcRenderer.invoke('racers:needs-waiver', racerId),
+
+  // Sign waiver
+  signWaiver: (racerId) =>
+    ipcRenderer.invoke('racers:sign-waiver', racerId),
+
+  // Get statistics
+  getStatistics: () =>
+    ipcRenderer.invoke('racers:stats'),
+
+  // Export data
+  exportToJSON: (includeAllHistory) =>
+    ipcRenderer.invoke('racers:export', includeAllHistory),
+
+  // Import data
+  importFromJSON: () =>
+    ipcRenderer.invoke('racers:import'),
+
+  // Clear today's racers
+  clearTodays: () =>
+    ipcRenderer.invoke('racers:clear-today'),
+
+  // Sync with cloud
+  syncWithCloud: (config) =>
+    ipcRenderer.invoke('racers:sync-cloud', config)
 });

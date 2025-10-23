@@ -7,7 +7,7 @@ class DualTimingPanel {
     if (!this.container) {
       throw new Error(`Container '${containerId}' not found`);
     }
-    
+
     this.courses = {
       left: {
         name: 'Course A',
@@ -22,9 +22,9 @@ class DualTimingPanel {
         completedRuns: []
       }
     };
-    
+
     this.selectedRacers = {}; // Store selected racer ID per course
-    
+
     this.init();
   }
 
@@ -109,13 +109,13 @@ class DualTimingPanel {
         </div>
       </div>
     `;
-    
+
     this.addStyles();
   }
 
   renderCoursePanel(side) {
     const course = this.courses[side];
-    
+
     return `
       <div class="course-header" style="background: ${course.color}20; border-left: 4px solid ${course.color};">
         <h2 class="course-title">${course.name}</h2>
@@ -252,6 +252,17 @@ class DualTimingPanel {
 
       .racer-input {
         position: relative;
+        transition: all var(--transition-base);
+      }
+
+      .racer-input.validated {
+        border-color: var(--color-success);
+        background-color: rgba(16, 185, 129, 0.1);
+      }
+
+      .racer-input.invalid {
+        border-color: var(--color-error);
+        background-color: rgba(239, 68, 68, 0.1);
       }
 
       .racer-suggestions {
@@ -565,11 +576,40 @@ class DualTimingPanel {
         this.handleRacerSearch(course, e.target.value);
       });
 
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          const course = e.target.dataset.course;
-          this.handleStartRun(course);
+      input.addEventListener('keydown', async (e) => {
+        const course = e.target.dataset.course;
+
+        // Handle Tab key - switch between course inputs only
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const targetCourse = course === 'left' ? 'right' : 'left';
+          const targetInput = document.querySelector(`.racer-input[data-course="${targetCourse}"]`);
+
+          // Validate current racer before switching
+          await this.validateRacer(course);
+
+          // Focus the other input
+          if (targetInput) {
+            targetInput.focus();
+            targetInput.select();
+          }
+          return;
         }
+
+        // Handle Enter key - validate and prepare to start
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          await this.validateAndPrepareRun(course);
+        }
+      });
+
+      // Keep blur event for validation when clicking away
+      input.addEventListener('blur', async (e) => {
+        const course = e.target.dataset.course;
+        // Small delay to allow suggestion clicks to register
+        setTimeout(async () => {
+          await this.validateRacer(course);
+        }, 200);
       });
     });
   }
@@ -583,7 +623,7 @@ class DualTimingPanel {
     try {
       // Get autocomplete suggestions from database
       const suggestions = await window.racerDB.autocomplete(query, 5);
-      
+
       if (suggestions && suggestions.length > 0) {
         this.showSuggestions(course, suggestions);
       } else {
@@ -597,7 +637,7 @@ class DualTimingPanel {
 
   showSuggestions(course, suggestions) {
     const container = document.querySelector(`.racer-suggestions[data-course="${course}"]`);
-    
+
     if (suggestions.length === 0) {
       this.hideSuggestions(course);
       return;
@@ -606,7 +646,7 @@ class DualTimingPanel {
     container.innerHTML = suggestions.map(s => {
       const bestTime = this.getBestTimeForCourse(s, course);
       const sourceIcon = s.source === 'today' ? '🏁' : '📁';
-      
+
       return `
         <div class="suggestion-item" data-racer-id="${s.id}" data-course="${course}">
           <div class="suggestion-primary">
@@ -631,7 +671,7 @@ class DualTimingPanel {
         const input = document.querySelector(`.racer-input[data-course="${course}"]`);
         input.value = racerId;
         this.hideSuggestions(course);
-        
+
         // Store selected racer for this course
         this.selectedRacers[course] = racerId;
       });
@@ -640,7 +680,7 @@ class DualTimingPanel {
 
   getBestTimeForCourse(racer, course) {
     if (!racer.bestTimes) return null;
-    
+
     const courseKey = course === 'left' ? 'courseA' : 'courseB';
     return racer.bestTimes[courseKey]?.handicapped || null;
   }
@@ -650,7 +690,68 @@ class DualTimingPanel {
     container.classList.remove('active');
   }
 
-  async handleStartRun(course) {
+  /**
+   * Validate racer and store their info for quick start
+   * Called when user tabs away or loses focus
+   */
+  async validateRacer(course) {
+    const input = document.querySelector(`.racer-input[data-course="${course}"]`);
+    const racerQuery = input.value.trim();
+
+    if (!racerQuery) {
+      // Clear any previously validated racer
+      delete this.selectedRacers[course];
+      input.classList.remove('validated', 'invalid');
+      return;
+    }
+
+    try {
+      // Search for racer in database
+      const result = await window.racerDB.search(racerQuery, {
+        checkCloud: true,
+        isSubscribed: false, // TODO: Check actual subscription status
+        isOnline: await window.electronAPI.checkInternet()
+      });
+
+      if (!result.racer) {
+        // Racer not found - mark as invalid
+        input.classList.remove('validated');
+        input.classList.add('invalid');
+        delete this.selectedRacers[course];
+        return;
+      }
+
+      // Racer found - store and mark as validated
+      const racer = result.racer;
+      this.selectedRacers[course] = {
+        id: racer.id,
+        bibNumber: racer.bibNumber,
+        firstName: racer.firstName,
+        lastName: racer.lastName,
+        gender: racer.gender,
+        discipline: racer.discipline,
+        needsWaiver: await window.racerDB.needsWaiver(racer.id)
+      };
+
+      input.classList.remove('invalid');
+      input.classList.add('validated');
+
+      // Update input to show racer's bib for consistency
+      input.value = racer.bibNumber;
+
+    } catch (err) {
+      console.error('Racer validation error:', err);
+      input.classList.remove('validated');
+      input.classList.add('invalid');
+      delete this.selectedRacers[course];
+    }
+  }
+
+  /**
+   * Validate racer and prepare for run start (when Enter is pressed)
+   * Shows appropriate modal if needed, or enables start button
+   */
+  async validateAndPrepareRun(course) {
     const input = document.querySelector(`.racer-input[data-course="${course}"]`);
     const racerQuery = input.value.trim();
 
@@ -674,7 +775,7 @@ class DualTimingPanel {
       }
 
       const racer = result.racer;
-      
+
       // Check if waiver needed
       const needsWaiver = await window.racerDB.needsWaiver(racer.id);
       if (needsWaiver) {
@@ -682,7 +783,86 @@ class DualTimingPanel {
         return;
       }
 
-      // Start the run
+      // Store validated racer
+      this.selectedRacers[course] = {
+        id: racer.id,
+        bibNumber: racer.bibNumber,
+        firstName: racer.firstName,
+        lastName: racer.lastName,
+        gender: racer.gender,
+        discipline: racer.discipline,
+        needsWaiver: false
+      };
+
+      input.classList.remove('invalid');
+      input.classList.add('validated');
+      input.value = racer.bibNumber;
+
+      // Show ready message and indicate they can click Start
+      window.showNotification(
+        'Ready to Start',
+        `${racer.firstName} ${racer.lastName} (#${racer.bibNumber}) - Click START or press it when ready`
+      );
+
+    } catch (err) {
+      console.error('Racer validation error:', err);
+      window.showNotification('Error', err.message || 'Failed to validate racer');
+    }
+  }
+
+  async handleStartRun(course) {
+    const input = document.querySelector(`.racer-input[data-course="${course}"]`);
+
+    // Check if we have a pre-validated racer from Enter/Tab validation
+    let racer = this.selectedRacers[course];
+
+    if (!racer || typeof racer === 'string') {
+      // No pre-validated racer, need to search
+      const racerQuery = input.value.trim();
+
+      if (!racerQuery) {
+        window.showNotification('Error', 'Please enter a racer ID or bib number');
+        return;
+      }
+
+      try {
+        // Search for racer in database
+        const result = await window.racerDB.search(racerQuery, {
+          checkCloud: true,
+          isSubscribed: false, // TODO: Check actual subscription status
+          isOnline: await window.electronAPI.checkInternet()
+        });
+
+        if (!result.racer) {
+          // Racer not found - show new racer registration
+          this.showNewRacerModal(racerQuery, course);
+          return;
+        }
+
+        racer = result.racer;
+
+        // Check if waiver needed
+        const needsWaiver = await window.racerDB.needsWaiver(racer.id);
+        if (needsWaiver) {
+          this.showWaiverModal(racer, course);
+          return;
+        }
+      } catch (err) {
+        console.error('Start run error:', err);
+        window.showNotification('Error', err.message || 'Failed to start run');
+        return;
+      }
+    } else {
+      // Using pre-validated racer data
+      // Check waiver again in case status changed
+      if (racer.needsWaiver) {
+        this.showWaiverModal(racer, course);
+        return;
+      }
+    }
+
+    try {
+      // Start the run with validated racer data
       const run = await window.raceTiming.startRun(racer.id, racer.bibNumber, {
         course: course,
         racerName: `${racer.firstName} ${racer.lastName}`,
@@ -697,14 +877,16 @@ class DualTimingPanel {
 
       // Success
       window.showNotification(
-        'Run Started', 
+        'Run Started',
         `${racer.firstName} ${racer.lastName} (#${racer.bibNumber}) started on ${this.courses[course].name}`
       );
-      
+
+      // Clear input and validation state
       input.value = '';
-      this.selectedRacers[course] = racer.id;
+      input.classList.remove('validated', 'invalid');
+      delete this.selectedRacers[course];
       this.toggleButtons(course, true);
-      
+
     } catch (err) {
       console.error('Start run error:', err);
       window.showNotification('Error', err.message || 'Failed to start run');
@@ -712,6 +894,16 @@ class DualTimingPanel {
   }
 
   showNewRacerModal(query, course) {
+    // Check if racer registration modal is available
+    if (!window.racerRegistrationModal) {
+      console.error('Racer registration modal not initialized');
+      window.showNotification(
+        'Error',
+        `Racer with bib/ID "${query}" not found. Registration system is loading...`
+      );
+      return;
+    }
+
     // Open the racer registration modal
     window.racerRegistrationModal.open(
       query, // Pre-fill bib if it's a number
@@ -749,7 +941,7 @@ class DualTimingPanel {
   showWaiverModal(racer, course) {
     // TODO: Implement waiver modal
     window.showNotification(
-      'Waiver Required', 
+      'Waiver Required',
       `${racer.firstName} ${racer.lastName} needs to sign a waiver. Waiver system coming soon!`
     );
   }
@@ -788,15 +980,15 @@ class DualTimingPanel {
 
   async changeLayout(layout) {
     this.layoutMode = layout;
-    
+
     // Update button states
     document.querySelectorAll('.layout-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.layout === layout);
     });
-    
+
     // Update display
     this.updateLayout();
-    
+
     // Save preference
     try {
       const config = await window.electronAPI.loadConfig();
