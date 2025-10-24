@@ -144,10 +144,11 @@ class RacerDatabase extends EventEmitter {
    */
   async saveRacer(racerData) {
     const racer = {
-      id: racerData.id || this.generateRacerId(),
+      id: racerData.id || this.generateRacerId(racerData.lastName),
       bibNumber: racerData.bibNumber,
       firstName: racerData.firstName,
       lastName: racerData.lastName,
+      dateOfBirth: racerData.dateOfBirth || null,
       gender: racerData.gender || 'U', // M, F, U (unspecified)
       discipline: racerData.discipline || 'alpine', // alpine, snowboard, etc.
       disabilities: racerData.disabilities || [],
@@ -333,10 +334,43 @@ class RacerDatabase extends EventEmitter {
   }
 
   /**
-   * Generate unique racer ID
+   * Calculate age from date of birth
    */
-  generateRacerId() {
-    return `R${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+  calculateAge(dateOfBirth) {
+    if (!dateOfBirth) return null;
+    
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    
+    return age;
+  }
+
+  /**
+   * Generate unique racer ID
+   * Format: First 3 letters of last name (uppercase) + 4 random digits
+   * Example: John Smith → SMI2345
+   */
+  generateRacerId(lastName) {
+    // Get first 3 letters of last name, pad with X if needed
+    const letters = lastName.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 3).padEnd(3, 'X');
+    
+    // Generate random digits
+    const digits = Math.floor(1 + Math.random() * 90000);
+    
+    const proposedId = `${letters}${digits}`;
+    
+    // Check if this ID already exists, if so, generate new digits
+    if (this.localCache.has(proposedId) || this.todaysRacers.has(proposedId)) {
+      return this.generateRacerId(lastName); // Recursive retry with new random digits
+    }
+    
+    return proposedId;
   }
 
   /**

@@ -73,6 +73,17 @@ class RacerRegistrationModal {
 
               <div class="form-row">
                 <div class="input-group">
+                  <label>Date of Birth <span class="required">*</span></label>
+                  <input 
+                    type="date" 
+                    id="racerDOB"
+                    autocomplete="off"
+                  />
+                  <div class="input-hint">Used for age-based handicap calculations</div>
+                </div>
+
+              <div class="form-row">
+                <div class="input-group">
                   <label>Gender <span class="required">*</span></label>
                   <select id="racerGender">
                     <option value="M">Male</option>
@@ -525,6 +536,7 @@ class RacerRegistrationModal {
     const bibNumber = document.getElementById('racerBibNumber').value.trim();
     const firstName = document.getElementById('racerFirstName').value.trim();
     const lastName = document.getElementById('racerLastName').value.trim();
+    const dob = document.getElementById('racerDOB').value;
     const gender = document.getElementById('racerGender').value;
     const discipline = document.getElementById('racerDiscipline').value;
     const email = document.getElementById('racerEmail').value.trim();
@@ -569,6 +581,7 @@ class RacerRegistrationModal {
         bibNumber,
         firstName,
         lastName,
+        dob,
         gender,
         discipline,
         disabilities,
@@ -606,6 +619,7 @@ class RacerRegistrationModal {
     document.getElementById('racerBibNumber').value = '';
     document.getElementById('racerFirstName').value = '';
     document.getElementById('racerLastName').value = '';
+    document.getElementById('racerDOB').value = '';
     document.getElementById('racerGender').value = 'M';
     document.getElementById('racerDiscipline').value = 'alpine';
     document.getElementById('racerEmail').value = '';
