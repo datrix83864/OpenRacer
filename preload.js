@@ -62,10 +62,32 @@ contextBridge.exposeInMainWorld('raceTiming', {
     return () => ipcRenderer.removeListener('timing:run-started', callback);
   },
 
-  onRunCompleted: (callback) => {
-    ipcRenderer.on('timing:run-completed', (event, run) => callback(run));
-    return () => ipcRenderer.removeListener('timing:run-completed', callback);
-  },
+onRunCompleted: (callback) => {
+  ipcRenderer.on('timing:run-completed', (event, run) => callback(run));
+  return () => ipcRenderer.removeListener('timing:run-completed', callback);
+},
+
+async handleRacerSearch(course, query) {
+  if (!query || query.length < 2) {
+    this.hideSuggestions(course);
+    this.clearRacerInfo(course);
+    return;
+  }
+
+  try {
+    // Get autocomplete suggestions from database
+    const suggestions = await window.racerDB.autocomplete(query, 5);
+    
+    if (suggestions && suggestions.length > 0) {
+      this.showSuggestions(course, suggestions);
+    } else {
+      this.hideSuggestions(course);
+    }
+  } catch (err) {
+    console.error('Autocomplete error:', err);
+    this.hideSuggestions(course);
+  }
+},
 
   onRunDNF: (callback) => {
     ipcRenderer.on('timing:run-dnf', (event, run) => callback(run));
@@ -75,7 +97,55 @@ contextBridge.exposeInMainWorld('raceTiming', {
   onRunDisqualified: (callback) => {
     ipcRenderer.on('timing:run-disqualified', (event, data) => callback(data));
     return () => ipcRenderer.removeListener('timing:run-disqualified', callback);
+  },
+
+  clearRacerInfo(course) {
+    const infoContainer = document.querySelector(`.racer-info-display[data-course="${course}"]`);
+    if (infoContainer) {
+      infoContainer.style.display = 'none';
+      infoContainer.innerHTML = '';
+    }
+  },
+
+  calculateAge(birthdate) {
+    if (!birthdate) return null;
+    const today = new Date();
+    const birth = new Date(birthdate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  },
+
+  displayRacerInfo(course, racer) {
+    const infoContainer = document.querySelector(`.racer-info-display[data-course="${course}"]`);
+    if (!infoContainer) return;
+
+    const age = this.calculateAge(racer.birthdate);
+    const genderDisplay = racer.gender === 'M' ? 'Male' : racer.gender === 'F' ? 'Female' : 'Unspecified';
+    const disciplineDisplay = racer.discipline ? racer.discipline.charAt(0).toUpperCase() + racer.discipline.slice(1) : 'Alpine';
+    
+    infoContainer.innerHTML = `
+      <div class="racer-info-header">
+        <div class="racer-info-main">
+          <span class="racer-name">${racer.firstName} ${racer.lastName}</span>
+          <span class="racer-bib">#${racer.bibNumber}</span>
+        </div>
+        <div class="racer-info-details">
+          <span class="info-badge">${genderDisplay}</span>
+          <span class="info-badge">${disciplineDisplay}</span>
+          ${age ? `<span class="info-badge">Age ${age}</span>` : ''}
+          ${racer.hasRacePass ? '<span class="info-badge badge-success">✓ Pass</span>' : ''}
+        </div>
+      </div>
+    `;
+    
+    infoContainer.style.display = 'block';
+    this.selectedRacers[course] = racer;
   }
+
 });
 
 // Add separate namespace for racer database
