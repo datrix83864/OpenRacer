@@ -32,9 +32,24 @@ function showTimingPanel() {
   // Show timing panel container
   timingContainer.style.display = 'block';
   
-  // Initialize DUAL timing panel (new version)
-  if (!dualTimingPanel) {
-    dualTimingPanel = new window.DualTimingPanel('timingPanelContainer');
+  // Initialize racer management panel first (at the top)
+  if (!window.racerManagementPanel) {
+    // Create container for racer management panel
+    const mgmtContainer = document.createElement('div');
+    mgmtContainer.id = 'racerManagementContainer';
+    timingContainer.insertBefore(mgmtContainer, timingContainer.firstChild);
+    
+    window.racerManagementPanel = new window.RacerManagementPanel('racerManagementContainer');
+  }
+  
+  // Initialize DUAL timing panel below management panel
+  if (!window.dualTimingPanel) {
+    // Create container for dual timing panel
+    const dualContainer = document.createElement('div');
+    dualContainer.id = 'dualTimingContainer';
+    timingContainer.appendChild(dualContainer);
+    
+    window.dualTimingPanel = new window.DualTimingPanel('dualTimingContainer');
     showNotification('Race Started', 'Dual course timing system is ready');
   }
 }

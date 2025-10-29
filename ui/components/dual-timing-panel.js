@@ -1160,6 +1160,41 @@ class DualTimingPanel {
     window.showNotification('Settings', `Course settings for ${this.courses[course].name} coming soon!`);
   }
 
+  /**
+   * Assign a racer to a course from the management panel
+   * This pre-fills the course input and displays racer info
+   */
+  assignRacerToCourse(course, racer) {
+    const input = document.querySelector(`.racer-input[data-course="${course}"]`);
+    
+    if (!input) {
+      console.error(`Course input not found for: ${course}`);
+      return;
+    }
+
+    // Set the input value to bib number
+    input.value = racer.bibNumber;
+    
+    // Store the racer data
+    this.selectedRacers[course] = racer;
+    
+    // Display racer info inline
+    this.displayRacerInfo(course, racer);
+    
+    // Mark input as validated
+    input.classList.remove('invalid');
+    input.classList.add('validated');
+    
+    // Focus the course input to draw operator's attention
+    input.focus();
+    
+    // Scroll the course panel into view
+    const panel = document.querySelector(`.course-panel[data-course="${course}"]`);
+    if (panel) {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
   async loadActiveRuns() {
     try {
       const activeRuns = await window.raceTiming.getActiveRuns() || [];
