@@ -32,9 +32,35 @@ class DualTimingPanel {
     await this.loadCourseSettings();
     this.render();
     this.attachEventListeners();
+    await this.startRaceSession(); // Start race session to open gates
     await this.loadActiveRuns();
     this.setupRealtimeUpdates();
     this.updateLayout();
+  }
+
+  async startRaceSession() {
+    try {
+      // Generate a race session ID based on date/time
+      const now = new Date();
+      const raceId = `RACE-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${now.getTime()}`;
+      const raceName = `Race Session ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+
+      const result = await window.raceTiming.startRace(raceId, raceName, {
+        leftCourse: this.courses.left.name,
+        rightCourse: this.courses.right.name,
+        startTime: now.toISOString()
+      });
+
+      if (result.error) {
+        console.error('Failed to start race session:', result.error);
+        window.showNotification('Warning', 'Race session may not have started properly');
+      } else {
+        console.log('Race session started:', result);
+      }
+    } catch (err) {
+      console.error('Error starting race session:', err);
+      // Don't block initialization, but log the error
+    }
   }
 
   async loadCourseSettings() {
@@ -82,6 +108,15 @@ class DualTimingPanel {
   render() {
     this.container.innerHTML = `
       <div class="timing-toolbar">
+        <div class="race-session-status">
+          <div class="session-indicator">
+            <span class="session-dot"></span>
+            <span class="session-text">Starting session...</span>
+          </div>
+          <button class="btn btn-sm btn-secondary open-gates-btn" style="display: none;">
+            🚪 Open Gates
+          </button>
+        </div>
         <div class="layout-switcher">
           <button class="btn btn-sm layout-btn ${this.layoutMode === 'dual' ? 'active' : ''}" data-layout="dual">
             Both Courses
