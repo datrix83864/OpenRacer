@@ -53,14 +53,42 @@ class DualTimingPanel {
 
       if (result.error) {
         console.error('Failed to start race session:', result.error);
-        window.showNotification('Warning', 'Race session may not have started properly');
+        this.updateSessionStatus('error', 'Gates Closed - Click to Open');
+        window.showNotification('Warning', 'Race session failed to start. Click "Open Gates" to try again.');
       } else {
         console.log('Race session started:', result);
+        this.updateSessionStatus('active', 'Gates Open - Ready to Race');
+        window.showNotification('Race Session Started', 'Start gates are now open. Ready to time runs!');
       }
     } catch (err) {
       console.error('Error starting race session:', err);
-      // Don't block initialization, but log the error
+      this.updateSessionStatus('error', 'Error - Click to Retry');
+      window.showNotification('Error', 'Failed to start race session. Click "Open Gates" to retry.');
     }
+  }
+
+  updateSessionStatus(status, text) {
+    const dot = this.container.querySelector('.session-dot');
+    const statusText = this.container.querySelector('.session-text');
+    const openGatesBtn = this.container.querySelector('.open-gates-btn');
+
+    if (!dot || !statusText) return;
+
+    // Remove all status classes
+    dot.classList.remove('active', 'error');
+    statusText.classList.remove('active');
+
+    // Add appropriate class and text
+    if (status === 'active') {
+      dot.classList.add('active');
+      statusText.classList.add('active');
+      if (openGatesBtn) openGatesBtn.style.display = 'none';
+    } else if (status === 'error') {
+      dot.classList.add('error');
+      if (openGatesBtn) openGatesBtn.style.display = 'block';
+    }
+
+    statusText.textContent = text;
   }
 
   async loadCourseSettings() {
@@ -207,12 +235,55 @@ class DualTimingPanel {
     style.textContent = `
       .timing-toolbar {
         display: flex;
-        justify-content: center;
+        justify-content: space-between;
+        align-items: center;
         padding: var(--spacing-md);
         margin-bottom: var(--spacing-md);
         background: var(--bg-card);
         border: 1px solid var(--border-primary);
         border-radius: var(--radius-lg);
+      }
+
+      .race-session-status {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+      }
+
+      .session-indicator {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-xs) var(--spacing-md);
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: var(--radius-md);
+      }
+
+      .session-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--text-tertiary);
+        animation: pulse 2s infinite;
+      }
+
+      .session-dot.active {
+        background: var(--color-success);
+      }
+
+      .session-dot.error {
+        background: var(--color-danger);
+        animation: none;
+      }
+
+      .session-text {
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-medium);
+        color: var(--text-secondary);
+      }
+
+      .session-text.active {
+        color: var(--color-success);
       }
 
       .layout-switcher {
@@ -660,6 +731,14 @@ class DualTimingPanel {
   }
 
   attachEventListeners() {
+    // Open gates button (manual override)
+    const openGatesBtn = this.container.querySelector('.open-gates-btn');
+    if (openGatesBtn) {
+      openGatesBtn.addEventListener('click', async () => {
+        await this.startRaceSession();
+      });
+    }
+
     // Layout switcher buttons
     document.querySelectorAll('.layout-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
@@ -1192,7 +1271,12 @@ class DualTimingPanel {
   }
 
   showCourseSettings(course) {
-    window.showNotification('Settings', `Course settings for ${this.courses[course].name} coming soon!`);
+    if (window.settingsModal) {
+      window.settingsModal.currentTab = 'courses';
+      window.settingsModal.open();
+    } else {
+      window.showNotification('Settings', 'Course settings for ${this.courses[course].name} - Settings modal is loading...');
+    }
   }
 
   /**

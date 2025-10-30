@@ -227,9 +227,10 @@ document.getElementById('remindLaterBtn').addEventListener('click', () => {
   hideUpdateModal();
 });
 
-// Settings button placeholder
+// Settings button
 document.getElementById('settingsBtn').addEventListener('click', () => {
-  showNotification('Settings', 'Settings panel coming soon!');
+  const settingsModal = document.getElementById('settingsModal');
+  settingsModal.classList.add('active');
 });
 
 // Close modal when clicking outside
