@@ -52,6 +52,11 @@ function showTimingPanel() {
     window.dualTimingPanel = new window.DualTimingPanel('dualTimingContainer');
     showNotification('Race Started', 'Dual course timing system is ready');
   }
+
+  // Initialize results export modal (if not already initialized)
+  if (!window.resultsExportModal) {
+    window.resultsExportModal = new window.ResultsExportModal();
+  }
 }
 
 // Show welcome screen

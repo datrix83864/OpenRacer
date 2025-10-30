@@ -11,7 +11,9 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:portable": "electron-builder --windows portable",
-    "test": "jest"
+    "test": "jest",
+    "download-libs": "node download-libs.js",
+    "postinstall": "node download-libs.js"
   },
   "keywords": [
     "ski",

@@ -156,6 +156,11 @@ class DualTimingPanel {
             ${this.courses.right.name} Only
           </button>
         </div>
+        <div class="toolbar-actions">
+          <button class="btn btn-sm btn-primary export-results-btn">
+            📊 Export Results
+          </button>
+        </div>
       </div>
 
       <div class="dual-timing-container layout-${this.layoutMode}">
@@ -242,6 +247,12 @@ class DualTimingPanel {
         background: var(--bg-card);
         border: 1px solid var(--border-primary);
         border-radius: var(--radius-lg);
+        gap: var(--spacing-md);
+      }
+
+      .toolbar-actions {
+        display: flex;
+        gap: var(--spacing-sm);
       }
 
       .race-session-status {
@@ -731,12 +742,39 @@ class DualTimingPanel {
   }
 
   attachEventListeners() {
+    console.log('DualTimingPanel: Attaching event listeners...');
+    
     // Open gates button (manual override)
     const openGatesBtn = this.container.querySelector('.open-gates-btn');
     if (openGatesBtn) {
       openGatesBtn.addEventListener('click', async () => {
         await this.startRaceSession();
       });
+      console.log('DualTimingPanel: Open gates button listener attached');
+    }
+
+    // Export results button
+    const exportBtn = this.container.querySelector('.export-results-btn');
+    console.log('DualTimingPanel: Looking for export button...', exportBtn);
+    
+    if (exportBtn) {
+      console.log('DualTimingPanel: Export button found, attaching listener');
+      exportBtn.addEventListener('click', () => {
+        console.log('DualTimingPanel: Export button clicked!');
+        console.log('DualTimingPanel: resultsExportModal exists?', !!window.resultsExportModal);
+        
+        if (window.resultsExportModal) {
+          console.log('DualTimingPanel: Opening results export modal...');
+          window.resultsExportModal.open();
+        } else {
+          console.error('DualTimingPanel: resultsExportModal not found on window object');
+          window.showNotification('Error', 'Export system not initialized. Please refresh the page.');
+        }
+      });
+      console.log('DualTimingPanel: Export button listener attached successfully');
+    } else {
+      console.error('DualTimingPanel: Export results button NOT FOUND in DOM');
+      console.log('DualTimingPanel: Container HTML:', this.container.innerHTML.substring(0, 500));
     }
 
     // Layout switcher buttons

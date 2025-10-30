@@ -1064,9 +1064,20 @@ class SettingsModal {
   }
 }
 
-// Initialize and expose globally
-if (!window.settingsModal) {
-  window.settingsModal = new SettingsModal();
-}
-
+// Expose class globally but don't auto-initialize
+// Let the app initialize it when needed
 window.SettingsModal = SettingsModal;
+
+// Initialize on DOM ready if called from a script tag
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!window.settingsModal) {
+      window.settingsModal = new SettingsModal();
+    }
+  });
+} else {
+  // DOM already loaded
+  if (!window.settingsModal) {
+    window.settingsModal = new SettingsModal();
+  }
+}
