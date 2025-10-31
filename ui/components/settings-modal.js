@@ -967,58 +967,76 @@ class SettingsModal {
     const modal = document.getElementById('settingsModal');
 
     try {
-      // Collect organization settings
-      const orgName = modal.querySelector('#orgName')?.value;
-      const orgLocation = modal.querySelector('#orgLocation')?.value;
-      const mountainId = modal.querySelector('#mountainId')?.value;
+      // Collect organization settings (only validate if on organization tab)
+      if (this.currentTab === 'organization') {
+        const orgName = modal.querySelector('#orgName')?.value;
+        const orgLocation = modal.querySelector('#orgLocation')?.value;
+        const mountainId = modal.querySelector('#mountainId')?.value;
 
-      if (!orgName || !orgLocation || !mountainId) {
-        window.showNotification('Error', 'Please fill in all required organization fields');
-        return;
+        if (!orgName || !orgLocation || !mountainId) {
+          window.showNotification('Error', 'Please fill in all required organization fields');
+          return;
+        }
+
+        this.settings.organization.name = orgName;
+        this.settings.organization.location = orgLocation;
+        this.settings.organization.mountainId = mountainId;
       }
 
-      this.settings.organization.name = orgName;
-      this.settings.organization.location = orgLocation;
-      this.settings.organization.mountainId = mountainId;
+      // Collect course settings (only if elements exist - means we're on that tab)
+      const courseLeftName = modal.querySelector('#courseLeftName');
+      if (courseLeftName) {
+        this.settings.courses.left.name = courseLeftName.value || 'Course A';
+        this.settings.courses.left.color = modal.querySelector('#courseLeftColor')?.value || '#667eea';
+        this.settings.courses.left.enabled = modal.querySelector('#courseLeftEnabled')?.checked !== false;
 
-      // Collect course settings
-      this.settings.courses.left.name = modal.querySelector('#courseLeftName')?.value || 'Course A';
-      this.settings.courses.left.color = modal.querySelector('#courseLeftColor')?.value || '#667eea';
-      this.settings.courses.left.enabled = modal.querySelector('#courseLeftEnabled')?.checked !== false;
+        this.settings.courses.right.name = modal.querySelector('#courseRightName')?.value || 'Course B';
+        this.settings.courses.right.color = modal.querySelector('#courseRightColor')?.value || '#10b981';
+        this.settings.courses.right.enabled = modal.querySelector('#courseRightEnabled')?.checked !== false;
+      }
 
-      this.settings.courses.right.name = modal.querySelector('#courseRightName')?.value || 'Course B';
-      this.settings.courses.right.color = modal.querySelector('#courseRightColor')?.value || '#10b981';
-      this.settings.courses.right.enabled = modal.querySelector('#courseRightEnabled')?.checked !== false;
-
-      // Collect pacesetter settings
+      // Collect pacesetter settings (only if rows exist)
       const pacesetterRows = modal.querySelectorAll('.pacesetter-row');
-      this.settings.pacesetters = [];
-      
-      pacesetterRows.forEach((row, index) => {
-        const bib = row.querySelector('.pacesetter-bib')?.value;
-        const name = row.querySelector('.pacesetter-name')?.value;
-        const gender = row.querySelector('.pacesetter-gender')?.value;
-        const handicap = parseFloat(row.querySelector('.pacesetter-handicap')?.value || 0);
+      if (pacesetterRows.length > 0) {
+        this.settings.pacesetters = [];
+        
+        pacesetterRows.forEach((row, index) => {
+          const bib = row.querySelector('.pacesetter-bib')?.value;
+          const name = row.querySelector('.pacesetter-name')?.value;
+          const gender = row.querySelector('.pacesetter-gender')?.value;
+          const handicap = parseFloat(row.querySelector('.pacesetter-handicap')?.value || 0);
 
-        if (bib && name) {
-          this.settings.pacesetters.push({
-            bib,
-            name,
-            gender,
-            handicap
-          });
-        }
-      });
+          if (bib && name) {
+            this.settings.pacesetters.push({
+              bib,
+              name,
+              gender,
+              handicap
+            });
+          }
+        });
+      }
 
-      // Collect display settings
+      // Collect display settings (only if elements exist)
       const themeRadio = modal.querySelector('input[name="theme"]:checked');
       if (themeRadio) {
         this.settings.display.theme = themeRadio.value;
       }
 
-      this.settings.display.fontSize = modal.querySelector('#fontSize')?.value || 'medium';
-      this.settings.display.showBestTimes = modal.querySelector('#showBestTimes')?.checked !== false;
-      this.settings.layoutMode = modal.querySelector('#defaultLayout')?.value || 'dual';
+      const fontSize = modal.querySelector('#fontSize');
+      if (fontSize) {
+        this.settings.display.fontSize = fontSize.value || 'medium';
+      }
+
+      const showBestTimes = modal.querySelector('#showBestTimes');
+      if (showBestTimes) {
+        this.settings.display.showBestTimes = showBestTimes.checked !== false;
+      }
+
+      const defaultLayout = modal.querySelector('#defaultLayout');
+      if (defaultLayout) {
+        this.settings.layoutMode = defaultLayout.value || 'dual';
+      }
 
       // Save to backend
       await window.electronAPI.saveConfig(this.settings);
@@ -1031,7 +1049,7 @@ class SettingsModal {
       this.close();
 
       // If courses changed, suggest page reload
-      if (window.dualTimingPanel) {
+      if (courseLeftName && window.dualTimingPanel) {
         const shouldReload = confirm('Course settings have changed. Reload the page to apply changes?');
         if (shouldReload) {
           window.location.reload();

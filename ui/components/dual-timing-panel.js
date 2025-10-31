@@ -743,7 +743,7 @@ class DualTimingPanel {
 
   attachEventListeners() {
     console.log('DualTimingPanel: Attaching event listeners...');
-    
+
     // Open gates button (manual override)
     const openGatesBtn = this.container.querySelector('.open-gates-btn');
     if (openGatesBtn) {
@@ -756,13 +756,13 @@ class DualTimingPanel {
     // Export results button
     const exportBtn = this.container.querySelector('.export-results-btn');
     console.log('DualTimingPanel: Looking for export button...', exportBtn);
-    
+
     if (exportBtn) {
       console.log('DualTimingPanel: Export button found, attaching listener');
       exportBtn.addEventListener('click', () => {
         console.log('DualTimingPanel: Export button clicked!');
         console.log('DualTimingPanel: resultsExportModal exists?', !!window.resultsExportModal);
-        
+
         if (window.resultsExportModal) {
           console.log('DualTimingPanel: Opening results export modal...');
           window.resultsExportModal.open();
@@ -882,19 +882,19 @@ class DualTimingPanel {
 
     const age = this.calculateAge(racer.birthdate);
     const discipline = racer.discipline ? racer.discipline.charAt(0).toUpperCase() + racer.discipline.slice(1) : 'Alpine';
-    
+
     // Determine payment status
     const hasPass = racer.hasRacePass || false;
-    const paymentBadge = hasPass 
-      ? '<span class="payment-badge pass">✓ Pass</span>' 
+    const paymentBadge = hasPass
+      ? '<span class="payment-badge pass">✓ Pass</span>'
       : '<span class="payment-badge needs-payment">💳 Needs Payment</span>';
-    
+
     infoDisplay.innerHTML = `
       <span class="racer-name-display">${racer.firstName} ${racer.lastName}</span>
       <span class="racer-details-display">${age ? `Age ${age}` : ''} ${discipline}</span>
       ${paymentBadge}
     `;
-    
+
     infoDisplay.classList.add('active');
   }
 
@@ -963,13 +963,13 @@ class DualTimingPanel {
         const racer = JSON.parse(e.currentTarget.dataset.racer);
         const course = e.currentTarget.dataset.course;
         const input = document.querySelector(`.racer-input[data-course="${course}"]`);
-        
+
         input.value = racer.bibNumber;
         this.hideSuggestions(course);
-        
+
         this.selectedRacers[course] = racer;
         this.displayRacerInfo(course, racer);
-        
+
         input.classList.remove('invalid');
         input.classList.add('validated');
       });
@@ -1193,9 +1193,28 @@ class DualTimingPanel {
 
   async handleFinishRun(course) {
     const racer = this.selectedRacers[course];
+    // If no selected racer, check if there are any active runs on this course
     if (!racer) {
-      window.showNotification('Error', 'No active run to finish');
-      return;
+      const activeRuns = this.courses[course].activeRuns;
+      if (activeRuns.length === 0) {
+        window.showNotification('Error', 'No active run to finish on this course');
+        return;
+      }
+
+      // If there's exactly one active run, use that
+      if (activeRuns.length === 1) {
+        const run = activeRuns[0];
+        racer = {
+          id: run.racerId,
+          bibNumber: run.bibNumber,
+          firstName: run.metadata?.racerName?.split(' ')[0] || 'Racer',
+          lastName: run.metadata?.racerName?.split(' ').slice(1).join(' ') || ''
+        };
+      } else {
+        // Multiple active runs - need to select which one
+        window.showNotification('Error', 'Multiple active runs. Please select a racer first.');
+        return;
+      }
     }
 
     try {
@@ -1224,9 +1243,28 @@ class DualTimingPanel {
 
   async handleDNF(course) {
     const racer = this.selectedRacers[course];
+    // If no selected racer, check if there are any active runs on this course
     if (!racer) {
-      window.showNotification('Error', 'No active run to mark as DNF');
-      return;
+      const activeRuns = this.courses[course].activeRuns;
+      if (activeRuns.length === 0) {
+        window.showNotification('Error', 'No active run to DNF on this course');
+        return;
+      }
+
+      // If there's exactly one active run, use that
+      if (activeRuns.length === 1) {
+        const run = activeRuns[0];
+        racer = {
+          id: run.racerId,
+          bibNumber: run.bibNumber,
+          firstName: run.metadata?.racerName?.split(' ')[0] || 'Racer',
+          lastName: run.metadata?.racerName?.split(' ').slice(1).join(' ') || ''
+        };
+      } else {
+        // Multiple active runs - need to select which one
+        window.showNotification('Error', 'Multiple active runs. Please select a racer first.');
+        return;
+      }
     }
 
     const reason = prompt('DNF Reason (optional):', 'Did Not Finish');
@@ -1254,9 +1292,28 @@ class DualTimingPanel {
 
   async handleDSQ(course) {
     const racer = this.selectedRacers[course];
+    // If no selected racer, check if there are any active runs on this course
     if (!racer) {
-      window.showNotification('Error', 'No active run to disqualify');
-      return;
+      const activeRuns = this.courses[course].activeRuns;
+      if (activeRuns.length === 0) {
+        window.showNotification('Error', 'No active run to DSQ on this course');
+        return;
+      }
+
+      // If there's exactly one active run, use that
+      if (activeRuns.length === 1) {
+        const run = activeRuns[0];
+        racer = {
+          id: run.racerId,
+          bibNumber: run.bibNumber,
+          firstName: run.metadata?.racerName?.split(' ')[0] || 'Racer',
+          lastName: run.metadata?.racerName?.split(' ').slice(1).join(' ') || ''
+        };
+      } else {
+        // Multiple active runs - need to select which one
+        window.showNotification('Error', 'Multiple active runs. Please select a racer first.');
+        return;
+      }
     }
 
     const reason = prompt('Disqualification Reason:', 'Missed Gate');
@@ -1323,7 +1380,7 @@ class DualTimingPanel {
    */
   assignRacerToCourse(course, racer) {
     const input = document.querySelector(`.racer-input[data-course="${course}"]`);
-    
+
     if (!input) {
       console.error(`Course input not found for: ${course}`);
       return;
@@ -1331,20 +1388,20 @@ class DualTimingPanel {
 
     // Set the input value to bib number
     input.value = racer.bibNumber;
-    
+
     // Store the racer data
     this.selectedRacers[course] = racer;
-    
+
     // Display racer info inline
     this.displayRacerInfo(course, racer);
-    
+
     // Mark input as validated
     input.classList.remove('invalid');
     input.classList.add('validated');
-    
+
     // Focus the course input to draw operator's attention
     input.focus();
-    
+
     // Scroll the course panel into view
     const panel = document.querySelector(`.course-panel[data-course="${course}"]`);
     if (panel) {
@@ -1355,7 +1412,7 @@ class DualTimingPanel {
   async loadActiveRuns() {
     try {
       const activeRuns = await window.raceTiming.getActiveRuns() || [];
-      
+
       activeRuns.forEach(run => {
         const course = run.metadata?.course;
         if (course === 'left' || course === 'right') {
