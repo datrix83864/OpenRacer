@@ -141,14 +141,19 @@ class DualTimingPanel {
         </div>
 
         <div class="button-group-compact">
-          <button class="btn btn-success start-btn" data-course="${side}">
+          <button class="btn btn-success start-btn" data-course="${side}" title="Start run (Ctrl+Enter)">
             <span class="btn-icon">▶</span> Start
           </button>
-          <button class="btn btn-primary finish-btn" data-course="${side}" disabled>
+          <button class="btn btn-primary finish-btn" data-course="${side}" disabled
+            title="Finish oldest active run (Ctrl+${side === 'left' ? '[' : ']'})">
             <span class="btn-icon">■</span> Finish
           </button>
           <button class="btn btn-warning dnf-btn" data-course="${side}" disabled>DNF</button>
           <button class="btn btn-danger dsq-btn" data-course="${side}" disabled>DSQ</button>
+        </div>
+        <div class="shortcut-hints">
+          <span class="shortcut-hint">Start: <kbd>Ctrl+Enter</kbd></span>
+          <span class="shortcut-hint">Finish: <kbd>Ctrl+${side === 'left' ? '[' : ']'}</kbd></span>
         </div>
       </div>
 
@@ -263,20 +268,36 @@ class DualTimingPanel {
       newDayBtn.addEventListener('click', () => this.handleNewDay());
     }
 
-    // Racer input — autocomplete + Enter to start
+    // Racer input — autocomplete only; Ctrl+Enter to start (plain Enter is intentionally blocked)
     document.querySelectorAll('.racer-input').forEach(input => {
       input.addEventListener('input', (e) => {
         this.handleRacerSearch(e.target.dataset.course, e.target.value);
       });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && e.ctrlKey) {
           e.preventDefault();
           this.handleStartRun(e.target.dataset.course);
+        } else if (e.key === 'Enter') {
+          // Block plain Enter — prevents accidental run start while typing bib/name
+          e.preventDefault();
         }
         if (e.key === 'Escape') {
           this.hideSuggestions(e.target.dataset.course);
         }
       });
+    });
+
+    // Global finish shortcuts: Ctrl+[ = Finish left, Ctrl+] = Finish right
+    // These fire even while typing the next bib number
+    document.addEventListener('keydown', (e) => {
+      if (!e.ctrlKey) return;
+      if (e.key === '[') {
+        e.preventDefault();
+        this.handleFinishRun('left');
+      } else if (e.key === ']') {
+        e.preventDefault();
+        this.handleFinishRun('right');
+      }
     });
 
     // Close suggestions when clicking outside
@@ -900,7 +921,13 @@ class DualTimingPanel {
         }
 
         modal.remove();
-        await this.startRunForRacer(saved, course);
+        // Populate bib into input — operator presses Ctrl+Enter or Start button when ready
+        const input = document.querySelector(`.racer-input[data-course="${course}"]`);
+        if (input) { input.value = bibNumber.toString(); input.focus(); }
+        window.showNotification(
+          'Registered',
+          `#${bibNumber} ${firstName} ${lastName} — press Ctrl+Enter or Start when ready`
+        );
       } catch (err) {
         window.showNotification('Error', err.message || 'Failed to register racer');
       }
@@ -944,8 +971,11 @@ class DualTimingPanel {
       try {
         await window.racerDB.signWaiver(racer.id);
         modal.remove();
-        racer.waiverSigned = true;
-        await this.startRunForRacer(racer, course);
+        // Keep query in input — next Ctrl+Enter will re-check and proceed without waiver prompt
+        window.showNotification(
+          'Waiver Signed',
+          `${racer.firstName} ${racer.lastName} — press Ctrl+Enter or Start when ready`
+        );
       } catch (err) {
         window.showNotification('Error', err.message || 'Failed to record waiver');
       }
@@ -1215,6 +1245,33 @@ class DualTimingPanel {
         font-size: var(--font-size-sm);
         min-width: 0;
         white-space: nowrap;
+      }
+
+      .shortcut-hints {
+        display: flex;
+        gap: var(--spacing-md);
+        margin-top: 4px;
+        padding: 3px 0;
+      }
+
+      .shortcut-hint {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      kbd {
+        display: inline-block;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-primary);
+        border-radius: 3px;
+        padding: 0 4px;
+        font-family: var(--font-family-mono);
+        font-size: 10px;
+        line-height: 1.6;
+        color: var(--text-secondary);
       }
 
       .section-title {
