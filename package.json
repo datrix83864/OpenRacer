@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "cross-env NODE_ENV=development electron .",
-    "rebuild": "electron-rebuild -f -w serialport",
-    "postinstall": "electron-rebuild -f -w serialport",
+    "rebuild": "node scripts/rebuild-native.js",
+    "postinstall": "node scripts/rebuild-native.js",
     "build": "electron-builder",
     "build:win": "electron-builder --windows",
     "build:mac": "electron-builder --mac",
@@ -25,10 +25,10 @@
   "author": "OpenRacer Contributors",
   "license": "MIT",
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@types/jest": "^30.0.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
-    "electron-rebuild": "^3.2.9",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.4.1"
   },
