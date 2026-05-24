@@ -73,6 +73,68 @@ contextBridge.exposeInMainWorld('raceTiming', {
   }
 });
 
+contextBridge.exposeInMainWorld('hardware', {
+  listPorts: () =>
+    ipcRenderer.invoke('hardware:list-ports'),
+
+  openGate: (portPath, baudRate, action) =>
+    ipcRenderer.invoke('hardware:open-gate', portPath, baudRate, action),
+
+  closeGate: () =>
+    ipcRenderer.invoke('hardware:close-gate'),
+
+  openScoreboard: (portPath, baudRate) =>
+    ipcRenderer.invoke('hardware:open-scoreboard', portPath, baudRate),
+
+  closeScoreboard: () =>
+    ipcRenderer.invoke('hardware:close-scoreboard'),
+
+  status: () =>
+    ipcRenderer.invoke('hardware:status'),
+
+  scoreboardSend: (text) =>
+    ipcRenderer.invoke('hardware:scoreboard-send', text),
+
+  scoreboardPushLeaderboard: (courseName) =>
+    ipcRenderer.invoke('hardware:scoreboard-push-leaderboard', courseName),
+
+  onGateTrigger: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-trigger', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-trigger', wrapped);
+  },
+
+  onGateFinish: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-finish', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-finish', wrapped);
+  },
+
+  onGateConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-connected', wrapped);
+  },
+
+  onGateDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:gate-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-disconnected', wrapped);
+  },
+
+  onScoreboardConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:scoreboard-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-connected', wrapped);
+  },
+
+  onScoreboardDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:scoreboard-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-disconnected', wrapped);
+  },
+});
+
 contextBridge.exposeInMainWorld('racerDB', {
   search: (query, options) => ipcRenderer.invoke('racers:search', query, options),
   autocomplete: (query, limit) => ipcRenderer.invoke('racers:autocomplete', query, limit),

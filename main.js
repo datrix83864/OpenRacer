@@ -2,6 +2,7 @@
 
 const RaceTiming = require('./modules/race-timing');
 const RacerDatabase = require('./modules/racer-database');
+const HardwareManager = require('./modules/hardware');
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
@@ -10,6 +11,7 @@ const https = require('https');
 
 let mainWindow;
 let updateInfo = null;
+let hardware;
 let raceTiming;
 let racerDB;
 
@@ -262,6 +264,9 @@ app.whenReady().then(async () => {
     requireWaiver: false // TODO: Load from mountain settings
   });
   
+  // Initialize hardware manager
+  hardware = new HardwareManager();
+
   try {
     await raceTiming.initialize();
     await racerDB.initialize();
@@ -269,6 +274,78 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('Failed to initialize modules:', err);
   }
+
+  // Restore hardware config from saved settings
+  try {
+    const config = await loadConfig();
+    if (config.hardware) {
+      const hw = config.hardware;
+      if (hw.gatePath) {
+        hardware.openGatePort(hw.gatePath, hw.gateBaud || 9600, hw.gateAction)
+          .catch(err => console.warn('Gate port restore failed:', err.message));
+      }
+      if (hw.scoreboardPath) {
+        hardware.openScoreboardPort(hw.scoreboardPath, hw.scoreboardBaud || 9600)
+          .catch(err => console.warn('Scoreboard port restore failed:', err.message));
+      }
+    }
+  } catch (_err) { /* no hardware config yet */ }
+
+  // Gate trigger → timing action
+  hardware.on('gate-trigger', async ({ action, course, timestamp }) => {
+    console.log(`Gate trigger: ${action} on ${course} @ ${timestamp}`);
+
+    BrowserWindow.getAllWindows().forEach(w => {
+      w.webContents.send('hardware:gate-trigger', { action, course, timestamp });
+    });
+
+    // Execute timing action directly
+    try {
+      if (action === 'start') {
+        // Gate-triggered start: the gate sends the racer ID separately (RFID) or we
+        // use whatever racer is queued in the UI. The renderer handles this via the
+        // hardware:gate-trigger event above.
+      } else if (action === 'finish') {
+        const result = await raceTiming.finishRun(null); // null = FIFO
+        if (result && !result.error) {
+          BrowserWindow.getAllWindows().forEach(w => {
+            w.webContents.send('hardware:gate-finish', { course, run: result, timestamp });
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Gate trigger action failed:', err.message);
+    }
+  });
+
+  hardware.on('gate-connected', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-connected', info));
+  });
+  hardware.on('gate-disconnected', () => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-disconnected'));
+  });
+  hardware.on('gate-error', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-error', info));
+  });
+  hardware.on('scoreboard-connected', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:scoreboard-connected', info));
+  });
+  hardware.on('scoreboard-disconnected', () => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:scoreboard-disconnected'));
+  });
+
+  // Auto-push leaderboard to scoreboard after each completed run
+  raceTiming.on('run-completed', async (run) => {
+    if (hardware.scoreboardConnected) {
+      try {
+        const lb = raceTiming.getLeaderboard();
+        const courseName = run.metadata?.course === 'left' ? 'Course A' : 'Course B';
+        await hardware.sendLeaderboard(lb, courseName);
+      } catch (err) {
+        console.warn('Scoreboard update failed:', err.message);
+      }
+    }
+  });
 
   // Listen to timing events
   raceTiming.on('run-started', (run) => {
@@ -621,4 +698,107 @@ ipcMain.handle('timing:reset', async () => {
   } catch (err) {
     return { error: err.message };
   }
+});
+
+// ==================== HARDWARE HANDLERS ====================
+
+// List available serial ports
+ipcMain.handle('hardware:list-ports', async () => {
+  try {
+    return await HardwareManager.listPorts();
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Open gate port
+ipcMain.handle('hardware:open-gate', async (event, portPath, baudRate, action) => {
+  try {
+    const result = await hardware.openGatePort(portPath, baudRate, action);
+    const config = await loadConfig();
+    if (!config.hardware) config.hardware = {};
+    config.hardware.gatePath   = portPath;
+    config.hardware.gateBaud   = baudRate;
+    config.hardware.gateAction = action;
+    await saveConfig(config);
+    return result;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Close gate port
+ipcMain.handle('hardware:close-gate', async () => {
+  try {
+    await hardware.closeGatePort();
+    const config = await loadConfig();
+    if (config.hardware) { delete config.hardware.gatePath; await saveConfig(config); }
+    return { success: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Open scoreboard port
+ipcMain.handle('hardware:open-scoreboard', async (event, portPath, baudRate) => {
+  try {
+    const result = await hardware.openScoreboardPort(portPath, baudRate);
+    const config = await loadConfig();
+    if (!config.hardware) config.hardware = {};
+    config.hardware.scoreboardPath = portPath;
+    config.hardware.scoreboardBaud = baudRate;
+    await saveConfig(config);
+    return result;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Close scoreboard port
+ipcMain.handle('hardware:close-scoreboard', async () => {
+  try {
+    await hardware.closeScoreboardPort();
+    const config = await loadConfig();
+    if (config.hardware) { delete config.hardware.scoreboardPath; await saveConfig(config); }
+    return { success: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Get hardware connection status
+ipcMain.handle('hardware:status', async () => {
+  return {
+    gateConnected:       hardware.gateConnected,
+    gatePath:            hardware.gatePath,
+    gateBaud:            hardware.gateBaud,
+    gateAction:          hardware.gateAction,
+    scoreboardConnected: hardware.scoreboardConnected,
+    scoreboardPath:      hardware.scoreboardPath,
+    scoreboardBaud:      hardware.scoreboardBaud,
+  };
+});
+
+// Send raw text to scoreboard (for testing/custom messages)
+ipcMain.handle('hardware:scoreboard-send', async (event, text) => {
+  try {
+    return await hardware.sendRaw(text);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Push current leaderboard to scoreboard on demand
+ipcMain.handle('hardware:scoreboard-push-leaderboard', async (event, courseName) => {
+  try {
+    const lb = raceTiming.getLeaderboard();
+    return await hardware.sendLeaderboard(lb, courseName);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Graceful shutdown
+app.on('before-quit', async () => {
+  if (hardware) await hardware.closeAll();
 });

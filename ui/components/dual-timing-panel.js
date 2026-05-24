@@ -101,8 +101,15 @@ class DualTimingPanel {
           </button>
         </div>
         <div class="toolbar-actions">
-          <button class="btn btn-sm btn-secondary" id="exportResultsBtn">Export Results</button>
-          <button class="btn btn-sm btn-danger" id="newDayBtn">New Day</button>
+          <div class="hw-badge" id="hwBadgeGate" title="Timing gate">
+            <span class="hw-dot hw-dot-off"></span> Gate
+          </div>
+          <div class="hw-badge" id="hwBadgeScoreboard" title="Scoreboard">
+            <span class="hw-dot hw-dot-off"></span> Board
+          </div>
+          <button class="btn btn-sm btn-secondary" id="hardwareSettingsBtn">Hardware</button>
+          <button class="btn btn-sm btn-secondary" id="exportResultsBtn">Export</button>
+          <button class="btn btn-sm btn-danger"    id="newDayBtn">New Day</button>
         </div>
       </div>
 
@@ -259,27 +266,44 @@ class DualTimingPanel {
 
     // Toolbar buttons
     const exportBtn = document.getElementById('exportResultsBtn');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', () => window.raceTiming.export());
-    }
+    if (exportBtn) exportBtn.addEventListener('click', () => window.raceTiming.export());
 
     const newDayBtn = document.getElementById('newDayBtn');
-    if (newDayBtn) {
-      newDayBtn.addEventListener('click', () => this.handleNewDay());
-    }
+    if (newDayBtn) newDayBtn.addEventListener('click', () => this.handleNewDay());
 
-    // Racer input — autocomplete only; Ctrl+Enter to start (plain Enter is intentionally blocked)
+    const hwBtn = document.getElementById('hardwareSettingsBtn');
+    if (hwBtn) hwBtn.addEventListener('click', () => this.showHardwareSettings());
+
+    // Racer input — autocomplete + RFID speed-detection
+    // Plain Enter is blocked for keyboard input but auto-fires for RFID scans
+    // (RFID fills the field in < 150 ms then sends Enter)
     document.querySelectorAll('.racer-input').forEach(input => {
+      // Per-input RFID detection state
+      const rfid = { t0: null, len: 0 };
+
       input.addEventListener('input', (e) => {
-        this.handleRacerSearch(e.target.dataset.course, e.target.value);
+        const val = e.target.value;
+        if (!rfid.t0 || val.length <= 1) {
+          rfid.t0  = Date.now();
+          rfid.len = val.length;
+        } else {
+          rfid.len = val.length;
+        }
+        this.handleRacerSearch(e.target.dataset.course, val);
       });
+
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && e.ctrlKey) {
+        if (e.key === 'Enter') {
           e.preventDefault();
-          this.handleStartRun(e.target.dataset.course);
-        } else if (e.key === 'Enter') {
-          // Block plain Enter — prevents accidental run start while typing bib/name
-          e.preventDefault();
+          const elapsed   = rfid.t0 ? Date.now() - rfid.t0 : Infinity;
+          const isRfidScan = rfid.len >= 4 && elapsed < 150;
+
+          if (e.ctrlKey || isRfidScan) {
+            rfid.t0  = null;
+            rfid.len = 0;
+            this.handleStartRun(e.target.dataset.course);
+          }
+          // else: plain Enter from keyboard typing — blocked intentionally
         }
         if (e.key === 'Escape') {
           this.hideSuggestions(e.target.dataset.course);
@@ -770,6 +794,47 @@ class DualTimingPanel {
   // ── Real-time updates from backend (e.g., hardware triggers) ─────────────────
 
   setupRealtimeUpdates() {
+    // Hardware gate triggers — gate fires start or finish for a course
+    if (window.hardware) {
+      window.hardware.onGateTrigger(({ action, course, timestamp }) => {
+        if (action === 'start') {
+          // Trigger start on the configured course using whatever is in the input
+          this.handleStartRun(course);
+        }
+        // 'finish' is handled server-side (finishRun FIFO) and comes back via onGateFinish
+      });
+
+      window.hardware.onGateFinish(({ course, run }) => {
+        // Server already called finishRun; update UI state
+        if (run && course) this._moveToCompleted({ ...run, metadata: { ...(run.metadata || {}), course } });
+      });
+
+      window.hardware.onGateConnected(({ path }) => {
+        this._updateHardwareBadge('gate', true, path);
+        window.showNotification('Gate Connected', `Timing gate on ${path}`);
+      });
+
+      window.hardware.onGateDisconnected(() => {
+        this._updateHardwareBadge('gate', false);
+        window.showNotification('Gate Disconnected', 'Timing gate disconnected');
+      });
+
+      window.hardware.onScoreboardConnected(({ path }) => {
+        this._updateHardwareBadge('scoreboard', true, path);
+        window.showNotification('Scoreboard Connected', `Scoreboard on ${path}`);
+      });
+
+      window.hardware.onScoreboardDisconnected(() => {
+        this._updateHardwareBadge('scoreboard', false);
+      });
+
+      // Load initial hardware status
+      window.hardware.status().then(status => {
+        this._updateHardwareBadge('gate',       status.gateConnected,       status.gatePath);
+        this._updateHardwareBadge('scoreboard', status.scoreboardConnected, status.scoreboardPath);
+      }).catch(() => {});
+    }
+
     window.raceTiming.onRunStarted((run) => {
       const course = run.metadata?.course;
       if (!course) return;
@@ -1098,6 +1163,194 @@ class DualTimingPanel {
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
   }
 
+  // ── Hardware badge helper ─────────────────────────────────────────────────────
+
+  _updateHardwareBadge(device, connected, portPath) {
+    const id  = device === 'gate' ? 'hwBadgeGate' : 'hwBadgeScoreboard';
+    const el  = document.getElementById(id);
+    if (!el) return;
+    const dot = el.querySelector('.hw-dot');
+    dot.className = connected ? 'hw-dot hw-dot-on' : 'hw-dot hw-dot-off';
+    el.title = connected ? `${device === 'gate' ? 'Gate' : 'Scoreboard'}: ${portPath}` : `${device === 'gate' ? 'Timing gate' : 'Scoreboard'} — not connected`;
+  }
+
+  // ── Hardware settings modal ───────────────────────────────────────────────────
+
+  async showHardwareSettings() {
+    let ports   = [];
+    let status  = { gateConnected: false, scoreboardConnected: false };
+
+    if (window.hardware) {
+      try {
+        [ports, status] = await Promise.all([
+          window.hardware.listPorts(),
+          window.hardware.status(),
+        ]);
+      } catch (_err) {}
+    }
+
+    const portOptions = ports.length
+      ? ports.map(p => `<option value="${p.path}">${p.friendlyName || p.path}${p.manufacturer ? ' — ' + p.manufacturer : ''}</option>`).join('')
+      : '<option value="">No ports detected</option>';
+
+    const gateActions = [
+      ['start-left',   'Start — Left Course'],
+      ['finish-left',  'Finish — Left Course'],
+      ['start-right',  'Start — Right Course'],
+      ['finish-right', 'Finish — Right Course'],
+      ['toggle-left',  'Toggle Start/Finish — Left Course'],
+      ['toggle-right', 'Toggle Start/Finish — Right Course'],
+    ];
+
+    const modal = document.createElement('div');
+    modal.className = 'modal active or-modal';
+    modal.innerHTML = `
+      <div class="modal-content modal-lg">
+        <h2 class="modal-heading">Hardware Settings</h2>
+
+        <div class="hw-section">
+          <h3 class="hw-section-title">Timing Gate <span class="hw-status-chip ${status.gateConnected ? 'chip-on' : 'chip-off'}">${status.gateConnected ? 'Connected' : 'Disconnected'}</span></h3>
+          <p class="text-sm text-secondary mb-md">USB-CDC serial device (appears as COM port / ttyUSB). Receives trigger signals from photocell, pressure pad, or button.</p>
+          <div class="form-grid">
+            <div class="input-group">
+              <label>Port</label>
+              <select id="gatePort">
+                <option value="">— Select port —</option>
+                ${portOptions}
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Baud Rate</label>
+              <select id="gateBaud">
+                ${[1200,2400,4800,9600,19200,38400,57600,115200].map(b =>
+                  `<option value="${b}" ${b === (status.gateBaud || 9600) ? 'selected' : ''}>${b}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="input-group" style="grid-column:1/-1;">
+              <label>Gate Action (what to do when gate fires)</label>
+              <select id="gateAction">
+                ${gateActions.map(([v, l]) =>
+                  `<option value="${v}" ${v === (status.gateAction || 'start-left') ? 'selected' : ''}>${l}</option>`
+                ).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="hw-btn-row">
+            ${status.gateConnected
+              ? `<button class="btn btn-sm btn-danger" id="gateDisconnectBtn">Disconnect</button>
+                 <span class="text-sm text-secondary" style="margin-left:8px;">Connected: ${status.gatePath}</span>`
+              : `<button class="btn btn-sm btn-success" id="gateConnectBtn">Connect Gate</button>`
+            }
+          </div>
+        </div>
+
+        <div class="hw-section" style="margin-top:var(--spacing-lg);">
+          <h3 class="hw-section-title">Scoreboard Output <span class="hw-status-chip ${status.scoreboardConnected ? 'chip-on' : 'chip-off'}">${status.scoreboardConnected ? 'Connected' : 'Disconnected'}</span></h3>
+          <p class="text-sm text-secondary mb-md">RS-232 or USB-CDC serial output to an external scoreboard or display. Leaderboard is pushed automatically after each run.</p>
+          <div class="form-grid">
+            <div class="input-group">
+              <label>Port</label>
+              <select id="boardPort">
+                <option value="">— Select port —</option>
+                ${portOptions}
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Baud Rate</label>
+              <select id="boardBaud">
+                ${[1200,2400,4800,9600,19200,38400,57600,115200].map(b =>
+                  `<option value="${b}" ${b === (status.scoreboardBaud || 9600) ? 'selected' : ''}>${b}</option>`
+                ).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="hw-btn-row">
+            ${status.scoreboardConnected
+              ? `<button class="btn btn-sm btn-danger" id="boardDisconnectBtn">Disconnect</button>
+                 <button class="btn btn-sm btn-secondary" id="boardTestBtn" style="margin-left:4px;">Send Test</button>
+                 <span class="text-sm text-secondary" style="margin-left:8px;">Connected: ${status.scoreboardPath}</span>`
+              : `<button class="btn btn-sm btn-success" id="boardConnectBtn">Connect Scoreboard</button>`
+            }
+          </div>
+        </div>
+
+        <div class="hw-section" style="margin-top:var(--spacing-lg);">
+          <h3 class="hw-section-title">Refresh Ports</h3>
+          <button class="btn btn-sm btn-secondary" id="refreshPortsBtn">Scan for Ports</button>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="hwClose">Close</button>
+        </div>
+      </div>
+    `;
+
+    // Pre-select current port paths in dropdowns
+    if (status.gatePath) {
+      const sel = modal.querySelector('#gatePort');
+      for (const opt of sel.options) { if (opt.value === status.gatePath) { opt.selected = true; break; } }
+    }
+    if (status.scoreboardPath) {
+      const sel = modal.querySelector('#boardPort');
+      for (const opt of sel.options) { if (opt.value === status.scoreboardPath) { opt.selected = true; break; } }
+    }
+
+    document.body.appendChild(modal);
+
+    // Connect / disconnect gate
+    modal.querySelector('#gateConnectBtn')?.addEventListener('click', async () => {
+      const port   = modal.querySelector('#gatePort').value;
+      const baud   = parseInt(modal.querySelector('#gateBaud').value);
+      const action = modal.querySelector('#gateAction').value;
+      if (!port) { window.showNotification('Error', 'Select a port first'); return; }
+      try {
+        await window.hardware.openGate(port, baud, action);
+        this._updateHardwareBadge('gate', true, port);
+        modal.remove();
+        window.showNotification('Gate Connected', `${port} @ ${baud}`);
+      } catch (err) { window.showNotification('Error', err.message || 'Failed to connect gate'); }
+    });
+
+    modal.querySelector('#gateDisconnectBtn')?.addEventListener('click', async () => {
+      await window.hardware.closeGate();
+      this._updateHardwareBadge('gate', false);
+      modal.remove();
+    });
+
+    // Connect / disconnect scoreboard
+    modal.querySelector('#boardConnectBtn')?.addEventListener('click', async () => {
+      const port = modal.querySelector('#boardPort').value;
+      const baud = parseInt(modal.querySelector('#boardBaud').value);
+      if (!port) { window.showNotification('Error', 'Select a port first'); return; }
+      try {
+        await window.hardware.openScoreboard(port, baud);
+        this._updateHardwareBadge('scoreboard', true, port);
+        modal.remove();
+        window.showNotification('Scoreboard Connected', `${port} @ ${baud}`);
+      } catch (err) { window.showNotification('Error', err.message || 'Failed to connect scoreboard'); }
+    });
+
+    modal.querySelector('#boardDisconnectBtn')?.addEventListener('click', async () => {
+      await window.hardware.closeScoreboard();
+      this._updateHardwareBadge('scoreboard', false);
+      modal.remove();
+    });
+
+    modal.querySelector('#boardTestBtn')?.addEventListener('click', async () => {
+      await window.hardware.scoreboardPushLeaderboard('Test');
+      window.showNotification('Sent', 'Current leaderboard pushed to scoreboard');
+    });
+
+    modal.querySelector('#refreshPortsBtn')?.addEventListener('click', async () => {
+      modal.remove();
+      this.showHardwareSettings();
+    });
+
+    modal.querySelector('#hwClose').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  }
+
   // ── Styles ────────────────────────────────────────────────────────────────────
 
   addStyles() {
@@ -1246,6 +1499,38 @@ class DualTimingPanel {
         min-width: 0;
         white-space: nowrap;
       }
+
+      /* Hardware status badges in toolbar */
+      .hw-badge {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-primary);
+        border-radius: var(--radius-md);
+        font-size: 11px;
+        color: var(--text-secondary);
+        cursor: default;
+      }
+
+      .hw-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .hw-dot-on  { background: var(--color-success); box-shadow: 0 0 4px var(--color-success); }
+      .hw-dot-off { background: var(--text-tertiary); }
+
+      /* Hardware settings modal */
+      .hw-section { border: 1px solid var(--border-secondary); border-radius: var(--radius-md); padding: var(--spacing-md); }
+      .hw-section-title { font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); }
+      .hw-status-chip { font-size: 10px; font-weight: normal; padding: 1px 6px; border-radius: 3px; }
+      .chip-on  { background: rgba(74,222,128,0.2); color: var(--color-success); }
+      .chip-off { background: rgba(239,68,68,0.2);  color: var(--color-danger); }
+      .hw-btn-row { display: flex; align-items: center; margin-top: var(--spacing-sm); }
 
       .shortcut-hints {
         display: flex;

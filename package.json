@@ -6,6 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "cross-env NODE_ENV=development electron .",
+    "rebuild": "electron-rebuild -f -w serialport",
+    "postinstall": "electron-rebuild -f -w serialport",
     "build": "electron-builder",
     "build:win": "electron-builder --windows",
     "build:mac": "electron-builder --mac",
@@ -26,6 +28,7 @@
     "@types/jest": "^30.0.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.4.1"
   },
@@ -40,6 +43,8 @@
       "preload.js",
       "renderer.js",
       "index.html",
+      "modules/**/*",
+      "ui/**/*",
       "assets/**/*"
     ],
     "win": {
@@ -81,5 +86,9 @@
     "portable": {
       "artifactName": "OpenRacer-Portable-${version}.exe"
     }
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "serialport": "^13.0.0"
   }
 }
