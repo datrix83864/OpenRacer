@@ -45,6 +45,18 @@ contextBridge.exposeInMainWorld('raceTiming', {
   export: (format) =>
     ipcRenderer.invoke('timing:export', format),
 
+  getAllRuns: () =>
+    ipcRenderer.invoke('timing:get-all-runs'),
+
+  importPackage: () =>
+    ipcRenderer.invoke('timing:import-package'),
+
+  getFormula: () =>
+    ipcRenderer.invoke('scoring:get-formula'),
+
+  setFormula: (config) =>
+    ipcRenderer.invoke('scoring:set-formula', config),
+
   reset: () =>
     ipcRenderer.invoke('timing:reset'),
 

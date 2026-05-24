@@ -1,228 +1,200 @@
-// renderer.js - UI logic and interaction
-let currentUpdateInfo = null;
-let timingPanel = null;
-let dualTimingPanel = null;
+;(function () {
+  'use strict';
 
-// Show notification
-function showNotification(title, body, duration = 5000) {
-  const notification = document.getElementById('notification');
-  const notificationTitle = document.getElementById('notificationTitle');
-  const notificationBody = document.getElementById('notificationBody');
-  
-  notificationTitle.textContent = title;
-  notificationBody.textContent = body;
-  notification.classList.add('active');
-  
-  setTimeout(() => {
-    notification.classList.remove('active');
-  }, duration);
-}
+  // Module-level state in a closure so re-injecting the script doesn't cause
+  // "Identifier already declared" in jsdom-based tests.
+  let currentUpdateInfo = null;
+  let dualTimingPanel   = null;
+  let leaderboardPanel  = null;
+  let racerList         = null;
 
-// Make showNotification globally available for components
-window.showNotification = showNotification;
+  // ── Notification ────────────────────────────────────────────────────────────
 
-// Show timing panel
-function showTimingPanel() {
-  const welcomeCard = document.getElementById('welcomeCard');
-  const timingContainer = document.getElementById('timingPanelContainer');
-  
-  // Hide welcome screen
-  welcomeCard.style.display = 'none';
-  
-  // Show timing panel container
-  timingContainer.style.display = 'block';
-  
-  // Initialize DUAL timing panel (new version)
-  if (!dualTimingPanel) {
-    dualTimingPanel = new window.DualTimingPanel('timingPanelContainer');
-    showNotification('Race Started', 'Dual course timing system is ready');
+  function showNotification(title, body, duration) {
+    duration = duration != null ? duration : 5000;
+    const el      = document.getElementById('notification');
+    const elTitle = document.getElementById('notificationTitle');
+    const elBody  = document.getElementById('notificationBody');
+    elTitle.textContent = title;
+    elBody.textContent  = body;
+    el.classList.add('active');
+    setTimeout(function () { el.classList.remove('active'); }, duration);
   }
-}
 
-// Show welcome screen
-function showWelcomeScreen() {
-  const welcomeCard = document.getElementById('welcomeCard');
-  const timingContainer = document.getElementById('timingPanelContainer');
-  
-  welcomeCard.style.display = 'block';
-  timingContainer.style.display = 'none';
-}
+  // ── Tab switching ────────────────────────────────────────────────────────────
 
-// Update status indicator
-function updateStatusIndicator(isOnline, subscriptionStatus = null) {
-  const statusDot = document.getElementById('statusDot');
-  const statusText = document.getElementById('statusText');
-  
-  if (!isOnline) {
-    statusDot.className = 'status-dot offline';
-    statusText.textContent = 'Offline Mode';
-    return;
-  }
-  
-  if (subscriptionStatus) {
-    if (subscriptionStatus.status === 'expired') {
-      statusDot.className = 'status-dot warning';
-      statusText.textContent = 'Subscription Expired';
-    } else if (subscriptionStatus.status === 'expiring') {
-      statusDot.className = 'status-dot warning';
-      statusText.textContent = `Expires in ${subscriptionStatus.daysRemaining} days`;
-    } else if (subscriptionStatus.status === 'active') {
-      statusDot.className = 'status-dot';
-      statusText.textContent = 'Online - Premium';
-    } else {
-      statusDot.className = 'status-dot';
-      statusText.textContent = 'Online - Free Tier';
-    }
-  } else {
-    statusDot.className = 'status-dot';
-    statusText.textContent = 'Online';
-  }
-}
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.tab === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(function (panel) {
+      panel.classList.toggle('active', panel.id === 'tab-' + name);
+    });
 
-// Check for updates
-async function checkForUpdates(manual = false) {
-  const statusText = document.getElementById('statusText');
-  const originalText = statusText.textContent;
-  
-  if (manual) {
-    statusText.textContent = 'Checking for updates...';
-  }
-  
-  try {
-    const result = await window.electronAPI.checkUpdates();
-    
-    if (result.status === 'no-internet') {
-      updateStatusIndicator(false);
-      if (manual) {
-        showNotification('No Internet', 'Unable to check for updates. Running in offline mode.');
+    if (name === 'results') {
+      if (!leaderboardPanel) {
+        leaderboardPanel = new window.LeaderboardPanel('leaderboardContainer');
+      } else {
+        leaderboardPanel.loadData();
       }
+    }
+
+    if (name === 'racers') {
+      if (!racerList) {
+        racerList = new window.RacerList('racerListContainer');
+      } else {
+        racerList.loadRacers();
+      }
+    }
+  }
+
+  // ── Status indicator ─────────────────────────────────────────────────────────
+
+  function updateStatusIndicator(isOnline, subscription) {
+    const dot  = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+
+    if (!isOnline) {
+      dot.className    = 'status-indicator offline';
+      text.textContent = 'Offline';
       return;
     }
-    
-    // Update status with subscription info
-    if (result.subscription) {
-      const isOnline = result.status !== 'no-internet';
-      updateStatusIndicator(isOnline, result.subscription);
-      
-      // Show subscription warnings
-      if (result.subscription.status === 'expired') {
-        showNotification(
-          'Subscription Expired',
-          'Your premium subscription has expired. Some features may be limited.',
-          8000
-        );
-      } else if (result.subscription.status === 'expiring' && result.subscription.daysRemaining <= 3) {
-        showNotification(
-          'Subscription Expiring Soon',
-          `Your premium subscription expires in ${result.subscription.daysRemaining} days.`,
-          8000
-        );
+
+    if (subscription) {
+      if (subscription.status === 'expired') {
+        dot.className    = 'status-indicator warning';
+        text.textContent = 'Subscription Expired';
+      } else if (subscription.status === 'expiring') {
+        dot.className    = 'status-indicator warning';
+        text.textContent = 'Expires in ' + subscription.daysRemaining + 'd';
+      } else if (subscription.status === 'active') {
+        dot.className    = 'status-indicator online';
+        text.textContent = 'Online — Premium';
+      } else {
+        dot.className    = 'status-indicator online';
+        text.textContent = 'Online';
       }
     } else {
-      updateStatusIndicator(true);
-    }
-    
-    if (result.status === 'update-available') {
-      currentUpdateInfo = result;
-      showUpdateModal(result);
-    } else if (result.status === 'up-to-date' && manual) {
-      showNotification('Up to Date', 'You are running the latest version of OpenRacer.');
-    } else if (result.status === 'skipped' && manual) {
-      showNotification('Update Available', 'An update is available, but you chose to skip it.');
-    } else if (result.status === 'error' && manual) {
-      showNotification('Update Check Failed', 'Unable to check for updates. Please try again later.');
-    }
-  } catch (err) {
-    console.error('Update check error:', err);
-    if (manual) {
-      showNotification('Error', 'Failed to check for updates.');
+      dot.className    = 'status-indicator online';
+      text.textContent = 'Online';
     }
   }
-}
 
-// Show update modal
-function showUpdateModal(updateInfo) {
-  const modal = document.getElementById('updateModal');
-  const updateBody = document.getElementById('updateBody');
-  
-  updateBody.innerHTML = `
-    <p><strong>Current Version:</strong> ${updateInfo.current}</p>
-    <p><strong>New Version:</strong> ${updateInfo.latest}</p>
-    <p style="margin-top: 12px;"><strong>What's New:</strong></p>
-    <p style="font-size: 12px; margin-top: 8px;">${updateInfo.releaseNotes?.substring(0, 200)}...</p>
-  `;
-  
-  modal.classList.add('active');
-}
+  // ── Update checking ──────────────────────────────────────────────────────────
 
-// Hide update modal
-function hideUpdateModal() {
-  const modal = document.getElementById('updateModal');
-  modal.classList.remove('active');
-}
+  async function checkForUpdates(manual) {
+    manual = !!manual;
+    const statusText = document.getElementById('statusText');
+    if (manual) statusText.textContent = 'Checking…';
 
-// Initialize app
-async function init() {
-  // Check connection and updates on startup
-  const hasInternet = await window.electronAPI.checkInternet();
-  
-  if (hasInternet) {
-    // Check for updates automatically on startup
-    await checkForUpdates(false);
-  } else {
-    updateStatusIndicator(false);
+    try {
+      const result = await window.electronAPI.checkUpdates();
+
+      if (result.status === 'no-internet') {
+        updateStatusIndicator(false);
+        if (manual) showNotification('No Internet', 'Running in offline mode.');
+        return;
+      }
+
+      updateStatusIndicator(true, result.subscription || null);
+
+      if (result.subscription && result.subscription.status === 'expired') {
+        showNotification('Subscription Expired', 'Some features may be limited.', 8000);
+      } else if (result.subscription && result.subscription.status === 'expiring' &&
+                 result.subscription.daysRemaining <= 3) {
+        showNotification('Subscription Expiring',
+          'Expires in ' + result.subscription.daysRemaining + ' day(s).', 8000);
+      }
+
+      if (result.status === 'update-available') {
+        currentUpdateInfo = result;
+        showUpdateModal(result);
+      } else if (result.status === 'up-to-date' && manual) {
+        showNotification('Up to Date', 'You are running the latest version.');
+      } else if (result.status === 'skipped' && manual) {
+        showNotification('Update Available', 'An update is available but was skipped.');
+      } else if (result.status === 'error' && manual) {
+        showNotification('Update Check Failed', 'Please try again later.');
+      }
+    } catch (err) {
+      console.error('Update check error:', err);
+      if (manual) showNotification('Error', 'Failed to check for updates.');
+    }
   }
-}
 
-// Event listeners
-document.getElementById('checkUpdateBtn').addEventListener('click', () => {
-  checkForUpdates(true);
-});
+  // ── Update modal ─────────────────────────────────────────────────────────────
 
-// Start New Race button
-document.getElementById('startNewRaceBtn').addEventListener('click', () => {
-  showTimingPanel();
-});
-
-document.getElementById('downloadNowBtn').addEventListener('click', async () => {
-  if (currentUpdateInfo && currentUpdateInfo.downloadUrl) {
-    showNotification('Opening Download', 'Your browser will open to download the update.');
-    // In a real app, you'd handle the download here
-    window.open(currentUpdateInfo.downloadUrl, '_blank');
+  function showUpdateModal(info) {
+    document.getElementById('updateBody').innerHTML =
+      '<p><strong>Current:</strong> ' + info.current + '</p>' +
+      '<p><strong>Latest:</strong> ' + info.latest + '</p>' +
+      '<p style="margin-top:10px;"><strong>What\'s New:</strong></p>' +
+      '<p style="font-size:12px;margin-top:6px;">' +
+        ((info.releaseNotes || '').substring(0, 200)) + '…</p>';
+    document.getElementById('updateModal').classList.add('active');
   }
-  hideUpdateModal();
-});
 
-document.getElementById('downloadBackgroundBtn').addEventListener('click', async () => {
-  showNotification('Background Download', 'Update will download in the background and install on next restart.');
-  // In a real app, you'd start background download here
-  hideUpdateModal();
-});
-
-document.getElementById('skipVersionBtn').addEventListener('click', async () => {
-  if (currentUpdateInfo) {
-    await window.electronAPI.skipVersion(currentUpdateInfo.latest);
-    showNotification('Update Skipped', `Version ${currentUpdateInfo.latest} will not be shown again.`);
+  function hideUpdateModal() {
+    document.getElementById('updateModal').classList.remove('active');
   }
-  hideUpdateModal();
-});
 
-document.getElementById('remindLaterBtn').addEventListener('click', () => {
-  showNotification('Reminder Set', 'You will be reminded about this update later.');
-  hideUpdateModal();
-});
+  // ── Init ─────────────────────────────────────────────────────────────────────
 
-// Settings button placeholder
-document.getElementById('settingsBtn').addEventListener('click', () => {
-  showNotification('Settings', 'Settings panel coming soon!');
-});
+  async function init() {
+    dualTimingPanel = new window.DualTimingPanel('timingPanelContainer');
 
-// Close modal when clicking outside
-document.getElementById('updateModal').addEventListener('click', (e) => {
-  if (e.target.id === 'updateModal') {
+    try {
+      const isOnline = await window.electronAPI.checkInternet();
+      if (isOnline) {
+        checkForUpdates(false);
+      } else {
+        updateStatusIndicator(false);
+      }
+    } catch (_) {
+      updateStatusIndicator(false);
+    }
+  }
+
+  // ── Wire up buttons and tabs ──────────────────────────────────────────────────
+
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
+  });
+
+  document.getElementById('checkUpdateBtn').addEventListener('click', function () {
+    checkForUpdates(true);
+  });
+  document.getElementById('downloadNowBtn').addEventListener('click', function () {
     hideUpdateModal();
-  }
-});
+  });
+  document.getElementById('downloadBackgroundBtn').addEventListener('click', function () {
+    showNotification('Background Download', 'Update will install on next restart.');
+    hideUpdateModal();
+  });
+  document.getElementById('skipVersionBtn').addEventListener('click', async function () {
+    if (currentUpdateInfo) {
+      await window.electronAPI.skipVersion(currentUpdateInfo.latest);
+      showNotification('Update Skipped',
+        'Version ' + currentUpdateInfo.latest + ' will not be shown again.');
+    }
+    hideUpdateModal();
+  });
+  document.getElementById('remindLaterBtn').addEventListener('click', function () {
+    showNotification('Reminder Set', 'You will be reminded about this update later.');
+    hideUpdateModal();
+  });
+  document.getElementById('updateModal').addEventListener('click', function (e) {
+    if (e.target.id === 'updateModal') hideUpdateModal();
+  });
 
-// Initialize on load
-init();
+  // ── Expose for cross-component use and testing ────────────────────────────────
+
+  window.showNotification      = showNotification;
+  window.updateStatusIndicator = updateStatusIndicator;
+  window.showUpdateModal       = showUpdateModal;
+  window.hideUpdateModal       = hideUpdateModal;
+  window.checkForUpdates       = checkForUpdates;
+  window.switchTab             = switchTab;
+
+  init();
+}());

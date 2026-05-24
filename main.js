@@ -1,8 +1,10 @@
 // main.js - Electron main process
 
-const RaceTiming = require('./modules/race-timing');
-const RacerDatabase = require('./modules/racer-database');
+const RaceTiming      = require('./modules/race-timing');
+const RacerDatabase   = require('./modules/racer-database');
 const HardwareManager = require('./modules/hardware');
+const ScoringEngine   = require('./modules/scoring');
+const { exportRunsToCSV, exportToPackage, importFromPackage } = require('./modules/export');
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
@@ -14,6 +16,7 @@ let updateInfo = null;
 let hardware;
 let raceTiming;
 let racerDB;
+let scoringEngine = new ScoringEngine();
 
 // Configuration
 const APP_VERSION = '1.0.0';
@@ -274,6 +277,13 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('Failed to initialize modules:', err);
   }
+
+  // Load scoring formula from saved config
+  try {
+    const scoringCfg = (await loadConfig()).scoring;
+    if (scoringCfg?.formula)     scoringEngine.setFormula(scoringCfg.formula);
+    if (scoringCfg?.categories)  scoringEngine.setCategories(scoringCfg.categories);
+  } catch (_) { /* no scoring config yet, use defaults */ }
 
   // Restore hardware config from saved settings
   try {
@@ -669,23 +679,131 @@ ipcMain.handle('timing:get-stats', async () => {
   }
 });
 
-// Export results
+// Export results (format: 'json' | 'csv' | 'package')
 ipcMain.handle('timing:export', async (event, format) => {
   try {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export Race Results',
-      defaultPath: `race-results-${Date.now()}.json`,
-      filters: [
-        { name: 'JSON', extensions: ['json'] }
-      ]
-    });
+    const fmt = format || 'json';
 
-    if (!result.canceled && result.filePath) {
-      await raceTiming.exportToJSON(result.filePath);
-      return { success: true, filePath: result.filePath };
+    let dialogOpts;
+    if (fmt === 'csv') {
+      dialogOpts = {
+        title: 'Export Race Results (CSV)',
+        defaultPath: `race-results-${new Date().toISOString().slice(0,10)}.csv`,
+        filters: [{ name: 'CSV', extensions: ['csv'] }]
+      };
+    } else if (fmt === 'package') {
+      dialogOpts = {
+        title: 'Export Data Package',
+        defaultPath: `openracer-package-${new Date().toISOString().slice(0,10)}.json`,
+        filters: [{ name: 'OpenRacer Package', extensions: ['json'] }]
+      };
+    } else {
+      dialogOpts = {
+        title: 'Export Race Results',
+        defaultPath: `race-results-${new Date().toISOString().slice(0,10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      };
     }
 
-    return { canceled: true };
+    const result = await dialog.showSaveDialog(mainWindow, dialogOpts);
+    if (result.canceled) return { canceled: true };
+
+    if (fmt === 'csv') {
+      const runs = raceTiming.completedRuns;
+      const csv  = exportRunsToCSV(runs, scoringEngine);
+      await fs.writeFile(result.filePath, csv, 'utf8');
+    } else if (fmt === 'package') {
+      const runs   = raceTiming.completedRuns;
+      const racers = Array.from(racerDB.localCache.values());
+      const config = await loadConfig();
+      const pkg    = exportToPackage(runs, racers, {
+        mountainId: racerDB.mountainId,
+        raceId:     raceTiming.currentRaceId,
+        formula:    config.scoring?.formula ?? { type: 'raw_time' }
+      });
+      await fs.writeFile(result.filePath, pkg, 'utf8');
+    } else {
+      await raceTiming.exportToJSON(result.filePath);
+    }
+
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Return all completed/dnf/dsq runs (excludes currently active)
+ipcMain.handle('timing:get-all-runs', () => {
+  try {
+    return raceTiming.completedRuns ?? [];
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Import a data package — merges runs and racers without wiping the current session
+ipcMain.handle('timing:import-package', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Data Package',
+      properties: ['openFile'],
+      filters: [{ name: 'OpenRacer Package', extensions: ['json'] }]
+    });
+    if (result.canceled) return { canceled: true };
+
+    const raw = await fs.readFile(result.filePaths[0], 'utf8');
+    const { runs, racers } = importFromPackage(raw);
+
+    // Merge runs: add any runId not already present
+    const existingIds = new Set((raceTiming.completedRuns ?? []).map(r => r.runId));
+    let runCount = 0;
+    for (const run of runs) {
+      if (!existingIds.has(run.runId)) {
+        raceTiming.completedRuns.push(run);
+        runCount++;
+      }
+    }
+    if (runCount > 0) await raceTiming.saveState();
+
+    // Merge racers
+    let racerCount = 0;
+    for (const racer of racers) {
+      if (!racerDB.localCache.has(racer.id)) {
+        racerDB.localCache.set(racer.id, racer);
+        racerCount++;
+      }
+    }
+    if (racerCount > 0) await racerDB.saveLocalCache();
+
+    return { success: true, runCount, racerCount };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Get current scoring formula + categories
+ipcMain.handle('scoring:get-formula', async () => {
+  try {
+    const config = await loadConfig();
+    return {
+      formula:    config.scoring?.formula     ?? { type: 'raw_time' },
+      categories: config.scoring?.categories  ?? [],
+      presets:    ScoringEngine.defaultCategories()
+    };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Update scoring formula + categories
+ipcMain.handle('scoring:set-formula', async (event, data) => {
+  try {
+    const config = await loadConfig();
+    if (!config.scoring) config.scoring = {};
+    if (data.formula)    { config.scoring.formula    = data.formula;    scoringEngine.setFormula(data.formula); }
+    if (data.categories) { config.scoring.categories = data.categories; scoringEngine.setCategories(data.categories); }
+    await saveConfig(config);
+    return { success: true };
   } catch (err) {
     return { error: err.message };
   }

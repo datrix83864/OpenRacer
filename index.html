@@ -5,31 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
     <title>OpenRacer - Ski Race Timing System</title>
-    
-    <!-- Universal Theme System -->
+
+    <!-- Styles -->
     <link rel="stylesheet" href="ui/styles/theme.css">
-    
-    <!-- Load UI Components -->
+    <link rel="stylesheet" href="ui/styles/timing.css">
+    <link rel="stylesheet" href="ui/styles/results.css">
+
+    <!-- UI Components -->
     <script src="ui/components/timing-panel.js"></script>
     <script src="ui/components/dual-timing-panel.js"></script>
-    
+    <script src="ui/components/leaderboard.js"></script>
+    <script src="ui/components/racer-list.js"></script>
+
     <style>
-        /* Page-specific styles only - everything else comes from theme.css */
+        /* App shell — layout only; component styles live in timing.css / results.css */
         .app-container {
             display: flex;
             flex-direction: column;
             height: 100vh;
+            overflow: hidden;
         }
 
+        /* ── Header ──────────────────────────────────────────────────────── */
         .header {
             background: var(--bg-card);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border-primary);
-            padding: var(--spacing-md) var(--spacing-lg);
+            padding: var(--spacing-sm) var(--spacing-lg);
             display: flex;
             justify-content: space-between;
             align-items: center;
             -webkit-app-region: drag;
+            flex-shrink: 0;
         }
 
         .header-left {
@@ -39,27 +46,28 @@
         }
 
         .logo {
-            width: 40px;
-            height: 40px;
+            width: 36px;
+            height: 36px;
             background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
             border-radius: var(--radius-md);
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: var(--font-weight-bold);
-            font-size: var(--font-size-xl);
+            font-size: var(--font-size-md);
             color: white;
         }
 
         .app-version {
             font-size: var(--font-size-xs);
             color: var(--text-tertiary);
-            margin-left: var(--spacing-sm);
+            margin-left: var(--spacing-xs);
         }
 
         .header-right {
             display: flex;
             gap: var(--spacing-sm);
+            align-items: center;
             -webkit-app-region: no-drag;
         }
 
@@ -73,69 +81,35 @@
             font-size: var(--font-size-sm);
         }
 
-        .main-content {
-            flex: 1;
-            padding: var(--spacing-xl);
-            overflow-y: auto;
-        }
-
-        .welcome-card {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--spacing-md);
-            margin-top: var(--spacing-lg);
-        }
-
-        .feature-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border-secondary);
-            border-radius: var(--radius-md);
-            padding: var(--spacing-lg);
-            transition: all var(--transition-base);
-        }
-
-        .feature-card:hover {
-            background: var(--bg-card);
-            border-color: rgba(102, 126, 234, 0.3);
-            transform: translateY(-2px);
-        }
-
-        .feature-icon {
-            width: 48px;
-            height: 48px;
-            background: rgba(102, 126, 234, 0.2);
-            border-radius: var(--radius-md);
+        /* ── Main area ───────────────────────────────────────────────────── */
+        .main-area {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: var(--spacing-sm);
-            font-size: var(--font-size-2xl);
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
         }
 
-        .feature-title {
-            font-size: var(--font-size-md);
-            font-weight: var(--font-weight-semibold);
-            margin-bottom: var(--spacing-sm);
+        /* Tab panels fill remaining height */
+        #tab-timing,
+        #tab-results,
+        #tab-racers {
+            padding: 0;
         }
 
-        .feature-description {
-            font-size: var(--font-size-sm);
-            color: var(--text-secondary);
-            line-height: var(--line-height-normal);
+        #timingPanelContainer {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            padding: var(--spacing-lg);
+            box-sizing: border-box;
         }
 
+        /* ── Update modal ────────────────────────────────────────────────── */
         .modal {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(4px);
             align-items: center;
@@ -143,9 +117,7 @@
             z-index: var(--z-modal);
         }
 
-        .modal.active {
-            display: flex;
-        }
+        .modal.active { display: flex; }
 
         .modal-content {
             background: var(--bg-tertiary);
@@ -161,8 +133,10 @@
             gap: var(--spacing-sm);
             justify-content: flex-end;
             margin-top: var(--spacing-lg);
+            flex-wrap: wrap;
         }
 
+        /* ── Notification ────────────────────────────────────────────────── */
         .notification {
             position: fixed;
             top: 80px;
@@ -172,6 +146,7 @@
             border-radius: var(--radius-md);
             padding: var(--spacing-md);
             min-width: 300px;
+            max-width: 420px;
             box-shadow: var(--shadow-xl);
             display: none;
             z-index: var(--z-notification);
@@ -194,89 +169,75 @@
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-left">
-                <div class="logo">OR</div>
-                <div>
-                    <span class="text-xl font-semibold">OpenRacer</span>
-                    <span class="app-version" id="version">v1.0.0</span>
-                </div>
-            </div>
-            <div class="header-right">
-                <div class="status-badge">
-                    <div class="status-indicator online" id="statusDot"></div>
-                    <span id="statusText">Checking connection...</span>
-                </div>
-                <button class="btn btn-secondary" id="settingsBtn">Settings</button>
-            </div>
-        </header>
+<div class="app-container">
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Welcome Card (hide this when race starts) -->
-            <div class="card card-lg welcome-card" id="welcomeCard">
-                <h1 class="text-3xl font-bold gradient-text mb-sm">Welcome to OpenRacer</h1>
-                <p class="text-md text-secondary mb-lg">Open-source ski race timing system - built for operators, by operators</p>
-                
-                <div class="feature-grid">
-                    <div class="feature-card hover-lift">
-                        <div class="feature-icon">🎿</div>
-                        <div class="feature-title">Race Timing</div>
-                        <div class="feature-description">Accurate, reliable timing for all skill levels</div>
-                    </div>
-                    <div class="feature-card hover-lift">
-                        <div class="feature-icon">📊</div>
-                        <div class="feature-title">Live Results</div>
-                        <div class="feature-description">Real-time leaderboards and instant results</div>
-                    </div>
-                    <div class="feature-card hover-lift">
-                        <div class="feature-icon">☁️</div>
-                        <div class="feature-title">Offline First</div>
-                        <div class="feature-description">Works without internet, syncs when available</div>
-                    </div>
-                    <div class="feature-card hover-lift">
-                        <div class="feature-icon">🔓</div>
-                        <div class="feature-title">Open Source</div>
-                        <div class="feature-description">Community-driven, transparent, and free</div>
-                    </div>
-                </div>
-
-                <div class="flex gap-sm mt-xl">
-                    <button class="btn btn-primary" id="startNewRaceBtn">Start New Race</button>
-                    <button class="btn btn-secondary">Load Previous Race</button>
-                    <button class="btn btn-secondary" id="checkUpdateBtn">Check for Updates</button>
-                </div>
-            </div>
-
-            <!-- Timing Panel Container (hidden initially) -->
-            <div id="timingPanelContainer" style="display: none;"></div>
-        </main>
-
-        <!-- Update Modal -->
-        <div class="modal" id="updateModal">
-            <div class="modal-content">
-                <h2 class="text-2xl font-bold mb-md">Update Available</h2>
-                <div class="text-base text-secondary" id="updateBody">
-                    A new version of OpenRacer is available.
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-secondary" id="skipVersionBtn">Skip This Version</button>
-                    <button class="btn btn-secondary" id="remindLaterBtn">Remind Me Later</button>
-                    <button class="btn btn-secondary" id="downloadBackgroundBtn">Download in Background</button>
-                    <button class="btn btn-primary" id="downloadNowBtn">Download Now</button>
-                </div>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">OR</div>
+            <div>
+                <span class="text-xl font-semibold">OpenRacer</span>
+                <span class="app-version" id="version">v1.0.0</span>
             </div>
         </div>
-
-        <!-- Notification -->
-        <div class="notification" id="notification">
-            <div class="notification-title" id="notificationTitle">Notification</div>
-            <div class="notification-body" id="notificationBody">Message</div>
+        <div class="header-right">
+            <div class="status-badge">
+                <div class="status-indicator online" id="statusDot"></div>
+                <span id="statusText">Checking…</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="checkUpdateBtn">Check Updates</button>
         </div>
+    </header>
+
+    <!-- Tab bar -->
+    <nav class="tab-bar">
+        <button class="tab-btn active" data-tab="timing">Timing</button>
+        <button class="tab-btn"        data-tab="results">Results</button>
+        <button class="tab-btn"        data-tab="racers">Racers</button>
+    </nav>
+
+    <!-- Main area -->
+    <div class="main-area">
+
+        <!-- Timing tab -->
+        <div id="tab-timing" class="tab-panel active">
+            <div id="timingPanelContainer"></div>
+        </div>
+
+        <!-- Results / leaderboard tab -->
+        <div id="tab-results" class="tab-panel">
+            <div id="leaderboardContainer" style="display:flex;flex-direction:column;height:100%;"></div>
+        </div>
+
+        <!-- Racers tab -->
+        <div id="tab-racers" class="tab-panel">
+            <div id="racerListContainer" style="display:flex;flex-direction:column;height:100%;"></div>
+        </div>
+
     </div>
 
-    <script src="renderer.js"></script>
+</div>
+
+<!-- Update modal -->
+<div class="modal" id="updateModal">
+    <div class="modal-content">
+        <h2 class="text-2xl font-bold mb-md">Update Available</h2>
+        <div class="text-base text-secondary" id="updateBody">A new version of OpenRacer is available.</div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" id="skipVersionBtn">Skip This Version</button>
+            <button class="btn btn-secondary" id="remindLaterBtn">Remind Me Later</button>
+            <button class="btn btn-secondary" id="downloadBackgroundBtn">Download in Background</button>
+            <button class="btn btn-primary"   id="downloadNowBtn">Download Now</button>
+        </div>
+    </div>
+</div>
+
+<!-- Notification toast -->
+<div class="notification" id="notification">
+    <div class="notification-title" id="notificationTitle">Notification</div>
+    <div class="notification-body"  id="notificationBody">Message</div>
+</div>
+
+<script src="renderer.js"></script>
 </body>
 </html>
