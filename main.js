@@ -149,8 +149,8 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
+  // Open DevTools when launched with --dev flag (npm run dev)
+  if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
 }
