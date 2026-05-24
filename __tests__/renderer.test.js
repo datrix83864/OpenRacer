@@ -8,7 +8,7 @@ const path = require('path');
 
 
 describe('renderer.js UI logic', () => {
-    const rendererPath = path.join(__dirname, 'renderer.js');
+    const rendererPath = path.join(__dirname, '../renderer.js');
     let originalConsoleError;
 
     beforeAll(() => {

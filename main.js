@@ -280,21 +280,34 @@ app.whenReady().then(async () => {
 
   raceTiming.on('run-completed', async (run) => {
     console.log(`Run completed: Bib ${run.bibNumber} - ${run.adjustedTime}s`);
-    
-    // Update racer's best time if applicable
+
     try {
       await racerDB.updateBestTime(
-        run.racerId, 
-        run.course || 'left', 
+        run.racerId,
+        run.metadata?.course || 'left',
         run.totalTime,
         run.adjustedTime
       );
     } catch (err) {
       console.error('Failed to update best time:', err);
     }
-    
+
     BrowserWindow.getAllWindows().forEach(window => {
       window.webContents.send('timing:run-completed', run);
+    });
+  });
+
+  raceTiming.on('run-dnf', (run) => {
+    console.log(`Run DNF: Bib ${run.bibNumber}`);
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('timing:run-dnf', run);
+    });
+  });
+
+  raceTiming.on('run-disqualified', (data) => {
+    console.log(`Run DSQ: Bib ${data.run?.bibNumber} - ${data.run?.dsqReason}`);
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('timing:run-disqualified', data);
     });
   });
 
@@ -311,14 +324,6 @@ app.whenReady().then(async () => {
     BrowserWindow.getAllWindows().forEach(window => {
       window.webContents.send('racers:best-time-updated', data);
     });
-  });
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
   });
 
 });

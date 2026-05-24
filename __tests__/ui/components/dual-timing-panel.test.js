@@ -8,7 +8,7 @@ const path = require('path');
 
 
 describe('DualTimingPanel - constructor', () => {
-    const componentPath = path.resolve(__dirname, './dual-timing-panel.js');
+    const componentPath = path.resolve(__dirname, '../../../ui/components/dual-timing-panel.js');
 
     beforeEach(() => {
         // Clear DOM
@@ -37,9 +37,22 @@ describe('DualTimingPanel - constructor', () => {
         container.id = containerId;
         document.body.appendChild(container);
 
-        // Provide a simple electronAPI mock so loadCourseSettings resolves
+        // Provide mocks so async init resolves without errors
         window.electronAPI = {
-            loadConfig: jest.fn().mockResolvedValue({}) // empty config -> defaults used
+            loadConfig: jest.fn().mockResolvedValue({}),
+            saveConfig: jest.fn().mockResolvedValue()
+        };
+        window.raceTiming = {
+            startRace:       jest.fn().mockResolvedValue({}),
+            getActiveRuns:   jest.fn().mockResolvedValue([]),
+            getCompletedRuns: jest.fn().mockResolvedValue([]),
+            onRunStarted:    jest.fn().mockReturnValue(() => {}),
+            onRunCompleted:  jest.fn().mockReturnValue(() => {}),
+            onRunDNF:        jest.fn().mockReturnValue(() => {}),
+            onRunDisqualified: jest.fn().mockReturnValue(() => {})
+        };
+        window.racerDB = {
+            autocomplete: jest.fn().mockResolvedValue([])
         };
 
         // Require the component (registers class on window)
@@ -49,14 +62,14 @@ describe('DualTimingPanel - constructor', () => {
         const panel = new window.DualTimingPanel(containerId);
 
         // Wait a tick for async init to complete
-        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setTimeout(resolve, 0));
 
         // Basic state checks
         expect(panel.container).toBe(container);
         expect(panel.courses).toBeDefined();
         expect(panel.courses.left.name).toBe('Course A');
         expect(panel.courses.right.name).toBe('Course B');
-        expect(panel.selectedRacers).toEqual({});
+        expect(panel.activeRunsPerCourse).toEqual({ left: [], right: [] });
 
         // DOM checks - course panels and titles rendered
         const leftPanel = container.querySelector('.course-panel[data-course="left"]');
@@ -95,13 +108,25 @@ describe('DualTimingPanel - constructor', () => {
             loadConfig: jest.fn().mockResolvedValue(config),
             saveConfig: jest.fn().mockResolvedValue()
         };
+        window.raceTiming = {
+            startRace:        jest.fn().mockResolvedValue({}),
+            getActiveRuns:    jest.fn().mockResolvedValue([]),
+            getCompletedRuns: jest.fn().mockResolvedValue([]),
+            onRunStarted:     jest.fn().mockReturnValue(() => {}),
+            onRunCompleted:   jest.fn().mockReturnValue(() => {}),
+            onRunDNF:         jest.fn().mockReturnValue(() => {}),
+            onRunDisqualified: jest.fn().mockReturnValue(() => {})
+        };
+        window.racerDB = {
+            autocomplete: jest.fn().mockResolvedValue([])
+        };
 
         // Require and construct
         require(componentPath);
         const panel = new window.DualTimingPanel(containerId);
 
         // Wait for async init to finish
-        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setTimeout(resolve, 0));
 
         // Verify instance read config
         expect(panel.layoutMode).toBe('left-only');
