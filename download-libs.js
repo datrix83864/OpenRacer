@@ -63,18 +63,16 @@ async function downloadAllLibraries() {
     try {
       await downloadFile(lib.url, filepath, lib.name);
     } catch (err) {
-      console.error(`✗ Error downloading ${lib.name}:`, err.message);
-      process.exit(1);
+      console.warn(`⚠  Could not download ${lib.name} (offline?): ${err.message}`);
+      console.warn(`   PDF export will not work until lib/${lib.filename} is present.`);
     }
   }
 
-  console.log('\n✅ All libraries downloaded successfully!');
+  console.log('\n✅ Library check complete.');
   console.log('📂 Libraries saved to: lib/');
-  console.log('🚀 OpenRacer will now work offline!');
 }
 
-// Run the download
+// Run the download — failures are non-fatal so `npm install` always succeeds offline.
 downloadAllLibraries().catch((err) => {
-  console.error('Failed to download libraries:', err);
-  process.exit(1);
+  console.warn('Library download step failed (non-fatal):', err.message);
 });

@@ -1,8 +1,6 @@
 // preload.js - Bridge between main and renderer process
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected methods that allow the renderer process to use
-// ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   checkInternet: () => ipcRenderer.invoke('check-internet'),
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
@@ -13,13 +11,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdateFromFile: () => ipcRenderer.invoke('install-update-from-file')
 });
 
-// Add separate namespace for race timing
 contextBridge.exposeInMainWorld('raceTiming', {
-  // Race session management
   startRace: (raceId, raceName, courseData) =>
     ipcRenderer.invoke('timing:start-race', raceId, raceName, courseData),
 
-  // Run management
   startRun: (racerId, bibNumber, metadata) =>
     ipcRenderer.invoke('timing:start-run', racerId, bibNumber, metadata),
 
@@ -35,7 +30,6 @@ contextBridge.exposeInMainWorld('raceTiming', {
   addPenalty: (racerId, seconds, reason) =>
     ipcRenderer.invoke('timing:add-penalty', racerId, seconds, reason),
 
-  // Data retrieval
   getActiveRuns: () =>
     ipcRenderer.invoke('timing:get-active'),
 
@@ -48,153 +42,134 @@ contextBridge.exposeInMainWorld('raceTiming', {
   getStatistics: () =>
     ipcRenderer.invoke('timing:get-stats'),
 
-  // Export and reset
   export: (format) =>
     ipcRenderer.invoke('timing:export', format),
+
+  getAllRuns: () =>
+    ipcRenderer.invoke('timing:get-all-runs'),
+
+  importPackage: () =>
+    ipcRenderer.invoke('timing:import-package'),
+
+  getFormula: () =>
+    ipcRenderer.invoke('scoring:get-formula'),
+
+  setFormula: (config) =>
+    ipcRenderer.invoke('scoring:set-formula', config),
 
   reset: () =>
     ipcRenderer.invoke('timing:reset'),
 
-  // Event listeners for real-time updates
   onRunStarted: (callback) => {
-    ipcRenderer.on('timing:run-started', (event, run) => callback(run));
-    // Return unsubscribe function
-    return () => ipcRenderer.removeListener('timing:run-started', callback);
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-started', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-started', wrapped);
   },
 
-onRunCompleted: (callback) => {
-  ipcRenderer.on('timing:run-completed', (event, run) => callback(run));
-  return () => ipcRenderer.removeListener('timing:run-completed', callback);
-},
-
-async handleRacerSearch(course, query) {
-  if (!query || query.length < 2) {
-    this.hideSuggestions(course);
-    this.clearRacerInfo(course);
-    return;
-  }
-
-  try {
-    // Get autocomplete suggestions from database
-    const suggestions = await window.racerDB.autocomplete(query, 5);
-    
-    if (suggestions && suggestions.length > 0) {
-      this.showSuggestions(course, suggestions);
-    } else {
-      this.hideSuggestions(course);
-    }
-  } catch (err) {
-    console.error('Autocomplete error:', err);
-    this.hideSuggestions(course);
-  }
-},
+  onRunCompleted: (callback) => {
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-completed', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-completed', wrapped);
+  },
 
   onRunDNF: (callback) => {
-    ipcRenderer.on('timing:run-dnf', (event, run) => callback(run));
-    return () => ipcRenderer.removeListener('timing:run-dnf', callback);
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-dnf', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-dnf', wrapped);
   },
 
   onRunDisqualified: (callback) => {
-    ipcRenderer.on('timing:run-disqualified', (event, data) => callback(data));
-    return () => ipcRenderer.removeListener('timing:run-disqualified', callback);
-  },
-
-  clearRacerInfo(course) {
-    const infoContainer = document.querySelector(`.racer-info-display[data-course="${course}"]`);
-    if (infoContainer) {
-      infoContainer.style.display = 'none';
-      infoContainer.innerHTML = '';
-    }
-  },
-
-  calculateAge(birthdate) {
-    if (!birthdate) return null;
-    const today = new Date();
-    const birth = new Date(birthdate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  },
-
-  displayRacerInfo(course, racer) {
-    const infoContainer = document.querySelector(`.racer-info-display[data-course="${course}"]`);
-    if (!infoContainer) return;
-
-    const age = this.calculateAge(racer.birthdate);
-    const genderDisplay = racer.gender === 'M' ? 'Male' : racer.gender === 'F' ? 'Female' : 'Unspecified';
-    const disciplineDisplay = racer.discipline ? racer.discipline.charAt(0).toUpperCase() + racer.discipline.slice(1) : 'Alpine';
-    
-    infoContainer.innerHTML = `
-      <div class="racer-info-header">
-        <div class="racer-info-main">
-          <span class="racer-name">${racer.firstName} ${racer.lastName}</span>
-          <span class="racer-bib">#${racer.bibNumber}</span>
-        </div>
-        <div class="racer-info-details">
-          <span class="info-badge">${genderDisplay}</span>
-          <span class="info-badge">${disciplineDisplay}</span>
-          ${age ? `<span class="info-badge">Age ${age}</span>` : ''}
-          ${racer.hasRacePass ? '<span class="info-badge badge-success">✓ Pass</span>' : ''}
-        </div>
-      </div>
-    `;
-    
-    infoContainer.style.display = 'block';
-    this.selectedRacers[course] = racer;
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('timing:run-disqualified', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-disqualified', wrapped);
   }
-
 });
 
-// Add separate namespace for racer database
+contextBridge.exposeInMainWorld('hardware', {
+  listPorts: () =>
+    ipcRenderer.invoke('hardware:list-ports'),
+
+  openGate: (portPath, baudRate, action) =>
+    ipcRenderer.invoke('hardware:open-gate', portPath, baudRate, action),
+
+  closeGate: () =>
+    ipcRenderer.invoke('hardware:close-gate'),
+
+  openScoreboard: (portPath, baudRate) =>
+    ipcRenderer.invoke('hardware:open-scoreboard', portPath, baudRate),
+
+  closeScoreboard: () =>
+    ipcRenderer.invoke('hardware:close-scoreboard'),
+
+  status: () =>
+    ipcRenderer.invoke('hardware:status'),
+
+  scoreboardSend: (text) =>
+    ipcRenderer.invoke('hardware:scoreboard-send', text),
+
+  scoreboardPushLeaderboard: (courseName) =>
+    ipcRenderer.invoke('hardware:scoreboard-push-leaderboard', courseName),
+
+  onGateTrigger: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-trigger', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-trigger', wrapped);
+  },
+
+  onGateFinish: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-finish', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-finish', wrapped);
+  },
+
+  onGateConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-connected', wrapped);
+  },
+
+  onGateDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:gate-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-disconnected', wrapped);
+  },
+
+  onScoreboardConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:scoreboard-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-connected', wrapped);
+  },
+
+  onScoreboardDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:scoreboard-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-disconnected', wrapped);
+  },
+});
+
 contextBridge.exposeInMainWorld('racerDB', {
-  // Search for a racer
-  search: (query, options) =>
-    ipcRenderer.invoke('racers:search', query, options),
+  search: (query, options) => ipcRenderer.invoke('racers:search', query, options),
+  autocomplete: (query, limit) => ipcRenderer.invoke('racers:autocomplete', query, limit),
+  save: (racerData) => ipcRenderer.invoke('racers:save', racerData),
+  nextBib: () => ipcRenderer.invoke('racers:next-bib'),
+  today: () => ipcRenderer.invoke('racers:today'),
+  needsWaiver: (racerId) => ipcRenderer.invoke('racers:needs-waiver', racerId),
+  signWaiver: (racerId) => ipcRenderer.invoke('racers:sign-waiver', racerId),
+  stats: () => ipcRenderer.invoke('racers:stats'),
+  export: (includeAllHistory) => ipcRenderer.invoke('racers:export', includeAllHistory),
+  import: () => ipcRenderer.invoke('racers:import'),
+  clearToday: () => ipcRenderer.invoke('racers:clear-today'),
+  syncCloud: (options) => ipcRenderer.invoke('racers:sync-cloud', options),
 
-  // Get autocomplete suggestions
-  autocomplete: (query, limit) =>
-    ipcRenderer.invoke('racers:autocomplete', query, limit),
+  onRacerSaved: (callback) => {
+    const wrapped = (event, racer) => callback(racer);
+    ipcRenderer.on('racers:racer-saved', wrapped);
+    return () => ipcRenderer.removeListener('racers:racer-saved', wrapped);
+  },
 
-  // Save a racer
-  save: (racerData) =>
-    ipcRenderer.invoke('racers:save', racerData),
-
-  // Get next available bib number
-  getNextBib: () =>
-    ipcRenderer.invoke('racers:next-bib'),
-
-  // Get today's racers
-  getTodaysRacers: () =>
-    ipcRenderer.invoke('racers:today'),
-
-  // Check if racer needs waiver
-  needsWaiver: (racerId) =>
-    ipcRenderer.invoke('racers:needs-waiver', racerId),
-
-  // Sign waiver
-  signWaiver: (racerId) =>
-    ipcRenderer.invoke('racers:sign-waiver', racerId),
-
-  // Get statistics
-  getStatistics: () =>
-    ipcRenderer.invoke('racers:stats'),
-
-  // Export data
-  exportToJSON: (includeAllHistory) =>
-    ipcRenderer.invoke('racers:export', includeAllHistory),
-
-  // Import data
-  importFromJSON: () =>
-    ipcRenderer.invoke('racers:import'),
-
-  // Clear today's racers
-  clearTodays: () =>
-    ipcRenderer.invoke('racers:clear-today'),
-
-  // Sync with cloud
-  syncWithCloud: (config) =>
-    ipcRenderer.invoke('racers:sync-cloud', config)
+  onBestTimeUpdated: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('racers:best-time-updated', wrapped);
+    return () => ipcRenderer.removeListener('racers:best-time-updated', wrapped);
+  }
 });
