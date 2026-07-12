@@ -264,8 +264,8 @@ class RaceTiming extends EventEmitter {
    * Get all completed runs
    */
   getCompletedRuns(sortBy = 'adjustedTime') {
-    const runs = [...this.completedRuns].filter(r => r.status === 'completed');
-    
+    const runs = [...this.completedRuns];
+
     if (sortBy === 'adjustedTime') {
       runs.sort((a, b) => a.adjustedTime - b.adjustedTime);
     } else if (sortBy === 'bibNumber') {
@@ -281,8 +281,9 @@ class RaceTiming extends EventEmitter {
    * Get leaderboard (ranked results)
    */
   getLeaderboard() {
-    const completedRuns = this.getCompletedRuns('adjustedTime');
-    
+    const completedRuns = this.getCompletedRuns('adjustedTime')
+      .filter(r => r.status === 'completed');
+
     return completedRuns.map((run, index) => ({
       rank: index + 1,
       ...run,

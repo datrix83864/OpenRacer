@@ -55,7 +55,7 @@ describe('RaceTiming module', () => {
         expect(run.bibNumber).toBe(101);
         expect(run.status).toBe('running');
         expect(rt.getActiveRuns().some(r => r.racerId === 'racer-1')).toBe(true);
-        expect(ev.runId || ev.runId === undefined ? typeof ev.runId : true).toBeUndefined() || expect(ev.runId).toBeUndefined(); // no-op to keep linter happy
+        expect(ev.runId).toBe(run.runId);
     });
 
     test('finishRun completes a run, computes times and updates stats', async () => {
