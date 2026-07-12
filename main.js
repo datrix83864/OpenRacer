@@ -1,7 +1,10 @@
 // main.js - Electron main process
 
-const RaceTiming = require('./modules/race-timing');
-const RacerDatabase = require('./modules/racer-database');
+const RaceTiming      = require('./modules/race-timing');
+const RacerDatabase   = require('./modules/racer-database');
+const HardwareManager = require('./modules/hardware');
+const ScoringEngine   = require('./modules/scoring');
+const { exportRunsToCSV, exportToPackage, importFromPackage } = require('./modules/export');
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
@@ -10,8 +13,10 @@ const https = require('https');
 
 let mainWindow;
 let updateInfo = null;
+let hardware;
 let raceTiming;
 let racerDB;
+let scoringEngine = new ScoringEngine();
 
 // Configuration
 const APP_VERSION = '1.0.0';
@@ -147,8 +152,8 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
+  // Open DevTools when launched with --dev flag (npm run dev)
+  if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
 }
@@ -262,6 +267,9 @@ app.whenReady().then(async () => {
     requireWaiver: false // TODO: Load from mountain settings
   });
   
+  // Initialize hardware manager
+  hardware = new HardwareManager();
+
   try {
     await raceTiming.initialize();
     await racerDB.initialize();
@@ -269,6 +277,85 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('Failed to initialize modules:', err);
   }
+
+  // Load scoring formula from saved config
+  try {
+    const scoringCfg = (await loadConfig()).scoring;
+    if (scoringCfg?.formula)     scoringEngine.setFormula(scoringCfg.formula);
+    if (scoringCfg?.categories)  scoringEngine.setCategories(scoringCfg.categories);
+  } catch (_) { /* no scoring config yet, use defaults */ }
+
+  // Restore hardware config from saved settings
+  try {
+    const config = await loadConfig();
+    if (config.hardware) {
+      const hw = config.hardware;
+      if (hw.gatePath) {
+        hardware.openGatePort(hw.gatePath, hw.gateBaud || 9600, hw.gateAction)
+          .catch(err => console.warn('Gate port restore failed:', err.message));
+      }
+      if (hw.scoreboardPath) {
+        hardware.openScoreboardPort(hw.scoreboardPath, hw.scoreboardBaud || 9600)
+          .catch(err => console.warn('Scoreboard port restore failed:', err.message));
+      }
+    }
+  } catch (_err) { /* no hardware config yet */ }
+
+  // Gate trigger → timing action
+  hardware.on('gate-trigger', async ({ action, course, timestamp }) => {
+    console.log(`Gate trigger: ${action} on ${course} @ ${timestamp}`);
+
+    BrowserWindow.getAllWindows().forEach(w => {
+      w.webContents.send('hardware:gate-trigger', { action, course, timestamp });
+    });
+
+    // Execute timing action directly
+    try {
+      if (action === 'start') {
+        // Gate-triggered start: the gate sends the racer ID separately (RFID) or we
+        // use whatever racer is queued in the UI. The renderer handles this via the
+        // hardware:gate-trigger event above.
+      } else if (action === 'finish') {
+        const result = await raceTiming.finishRun(null); // null = FIFO
+        if (result && !result.error) {
+          BrowserWindow.getAllWindows().forEach(w => {
+            w.webContents.send('hardware:gate-finish', { course, run: result, timestamp });
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Gate trigger action failed:', err.message);
+    }
+  });
+
+  hardware.on('gate-connected', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-connected', info));
+  });
+  hardware.on('gate-disconnected', () => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-disconnected'));
+  });
+  hardware.on('gate-error', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:gate-error', info));
+  });
+  hardware.on('scoreboard-connected', (info) => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:scoreboard-connected', info));
+  });
+  hardware.on('scoreboard-disconnected', () => {
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.send('hardware:scoreboard-disconnected'));
+  });
+
+  // Auto-push leaderboard to scoreboard after each completed run
+  raceTiming.on('run-completed', async (run) => {
+    if (hardware.scoreboardConnected) {
+      try {
+        const lb = raceTiming.getLeaderboard();
+        const courseName = run.metadata?.course === 'left' ? 'Course A' : 'Course B';
+        await hardware.sendLeaderboard(lb, courseName);
+      } catch (err) {
+        console.warn('Scoreboard update failed:', err.message);
+      }
+    }
+  });
 
   // Listen to timing events
   raceTiming.on('run-started', (run) => {
@@ -280,21 +367,34 @@ app.whenReady().then(async () => {
 
   raceTiming.on('run-completed', async (run) => {
     console.log(`Run completed: Bib ${run.bibNumber} - ${run.adjustedTime}s`);
-    
-    // Update racer's best time if applicable
+
     try {
       await racerDB.updateBestTime(
-        run.racerId, 
-        run.course || 'left', 
+        run.racerId,
+        run.metadata?.course || 'left',
         run.totalTime,
         run.adjustedTime
       );
     } catch (err) {
       console.error('Failed to update best time:', err);
     }
-    
+
     BrowserWindow.getAllWindows().forEach(window => {
       window.webContents.send('timing:run-completed', run);
+    });
+  });
+
+  raceTiming.on('run-dnf', (run) => {
+    console.log(`Run DNF: Bib ${run.bibNumber}`);
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('timing:run-dnf', run);
+    });
+  });
+
+  raceTiming.on('run-disqualified', (data) => {
+    console.log(`Run DSQ: Bib ${data.run?.bibNumber} - ${data.run?.dsqReason}`);
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('timing:run-disqualified', data);
     });
   });
 
@@ -311,14 +411,6 @@ app.whenReady().then(async () => {
     BrowserWindow.getAllWindows().forEach(window => {
       window.webContents.send('racers:best-time-updated', data);
     });
-  });
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
   });
 
 });
@@ -587,23 +679,131 @@ ipcMain.handle('timing:get-stats', async () => {
   }
 });
 
-// Export results
+// Export results (format: 'json' | 'csv' | 'package')
 ipcMain.handle('timing:export', async (event, format) => {
   try {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export Race Results',
-      defaultPath: `race-results-${Date.now()}.json`,
-      filters: [
-        { name: 'JSON', extensions: ['json'] }
-      ]
-    });
+    const fmt = format || 'json';
 
-    if (!result.canceled && result.filePath) {
-      await raceTiming.exportToJSON(result.filePath);
-      return { success: true, filePath: result.filePath };
+    let dialogOpts;
+    if (fmt === 'csv') {
+      dialogOpts = {
+        title: 'Export Race Results (CSV)',
+        defaultPath: `race-results-${new Date().toISOString().slice(0,10)}.csv`,
+        filters: [{ name: 'CSV', extensions: ['csv'] }]
+      };
+    } else if (fmt === 'package') {
+      dialogOpts = {
+        title: 'Export Data Package',
+        defaultPath: `openracer-package-${new Date().toISOString().slice(0,10)}.json`,
+        filters: [{ name: 'OpenRacer Package', extensions: ['json'] }]
+      };
+    } else {
+      dialogOpts = {
+        title: 'Export Race Results',
+        defaultPath: `race-results-${new Date().toISOString().slice(0,10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      };
     }
 
-    return { canceled: true };
+    const result = await dialog.showSaveDialog(mainWindow, dialogOpts);
+    if (result.canceled) return { canceled: true };
+
+    if (fmt === 'csv') {
+      const runs = raceTiming.completedRuns;
+      const csv  = exportRunsToCSV(runs, scoringEngine);
+      await fs.writeFile(result.filePath, csv, 'utf8');
+    } else if (fmt === 'package') {
+      const runs   = raceTiming.completedRuns;
+      const racers = Array.from(racerDB.localCache.values());
+      const config = await loadConfig();
+      const pkg    = exportToPackage(runs, racers, {
+        mountainId: racerDB.mountainId,
+        raceId:     raceTiming.currentRaceId,
+        formula:    config.scoring?.formula ?? { type: 'raw_time' }
+      });
+      await fs.writeFile(result.filePath, pkg, 'utf8');
+    } else {
+      await raceTiming.exportToJSON(result.filePath);
+    }
+
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Return all completed/dnf/dsq runs (excludes currently active)
+ipcMain.handle('timing:get-all-runs', () => {
+  try {
+    return raceTiming.completedRuns ?? [];
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Import a data package — merges runs and racers without wiping the current session
+ipcMain.handle('timing:import-package', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Data Package',
+      properties: ['openFile'],
+      filters: [{ name: 'OpenRacer Package', extensions: ['json'] }]
+    });
+    if (result.canceled) return { canceled: true };
+
+    const raw = await fs.readFile(result.filePaths[0], 'utf8');
+    const { runs, racers } = importFromPackage(raw);
+
+    // Merge runs: add any runId not already present
+    const existingIds = new Set((raceTiming.completedRuns ?? []).map(r => r.runId));
+    let runCount = 0;
+    for (const run of runs) {
+      if (!existingIds.has(run.runId)) {
+        raceTiming.completedRuns.push(run);
+        runCount++;
+      }
+    }
+    if (runCount > 0) await raceTiming.saveState();
+
+    // Merge racers
+    let racerCount = 0;
+    for (const racer of racers) {
+      if (!racerDB.localCache.has(racer.id)) {
+        racerDB.localCache.set(racer.id, racer);
+        racerCount++;
+      }
+    }
+    if (racerCount > 0) await racerDB.saveLocalCache();
+
+    return { success: true, runCount, racerCount };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Get current scoring formula + categories
+ipcMain.handle('scoring:get-formula', async () => {
+  try {
+    const config = await loadConfig();
+    return {
+      formula:    config.scoring?.formula     ?? { type: 'raw_time' },
+      categories: config.scoring?.categories  ?? [],
+      presets:    ScoringEngine.defaultCategories()
+    };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Update scoring formula + categories
+ipcMain.handle('scoring:set-formula', async (event, data) => {
+  try {
+    const config = await loadConfig();
+    if (!config.scoring) config.scoring = {};
+    if (data.formula)    { config.scoring.formula    = data.formula;    scoringEngine.setFormula(data.formula); }
+    if (data.categories) { config.scoring.categories = data.categories; scoringEngine.setCategories(data.categories); }
+    await saveConfig(config);
+    return { success: true };
   } catch (err) {
     return { error: err.message };
   }
@@ -616,4 +816,107 @@ ipcMain.handle('timing:reset', async () => {
   } catch (err) {
     return { error: err.message };
   }
+});
+
+// ==================== HARDWARE HANDLERS ====================
+
+// List available serial ports
+ipcMain.handle('hardware:list-ports', async () => {
+  try {
+    return await HardwareManager.listPorts();
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Open gate port
+ipcMain.handle('hardware:open-gate', async (event, portPath, baudRate, action) => {
+  try {
+    const result = await hardware.openGatePort(portPath, baudRate, action);
+    const config = await loadConfig();
+    if (!config.hardware) config.hardware = {};
+    config.hardware.gatePath   = portPath;
+    config.hardware.gateBaud   = baudRate;
+    config.hardware.gateAction = action;
+    await saveConfig(config);
+    return result;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Close gate port
+ipcMain.handle('hardware:close-gate', async () => {
+  try {
+    await hardware.closeGatePort();
+    const config = await loadConfig();
+    if (config.hardware) { delete config.hardware.gatePath; await saveConfig(config); }
+    return { success: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Open scoreboard port
+ipcMain.handle('hardware:open-scoreboard', async (event, portPath, baudRate) => {
+  try {
+    const result = await hardware.openScoreboardPort(portPath, baudRate);
+    const config = await loadConfig();
+    if (!config.hardware) config.hardware = {};
+    config.hardware.scoreboardPath = portPath;
+    config.hardware.scoreboardBaud = baudRate;
+    await saveConfig(config);
+    return result;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Close scoreboard port
+ipcMain.handle('hardware:close-scoreboard', async () => {
+  try {
+    await hardware.closeScoreboardPort();
+    const config = await loadConfig();
+    if (config.hardware) { delete config.hardware.scoreboardPath; await saveConfig(config); }
+    return { success: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Get hardware connection status
+ipcMain.handle('hardware:status', async () => {
+  return {
+    gateConnected:       hardware.gateConnected,
+    gatePath:            hardware.gatePath,
+    gateBaud:            hardware.gateBaud,
+    gateAction:          hardware.gateAction,
+    scoreboardConnected: hardware.scoreboardConnected,
+    scoreboardPath:      hardware.scoreboardPath,
+    scoreboardBaud:      hardware.scoreboardBaud,
+  };
+});
+
+// Send raw text to scoreboard (for testing/custom messages)
+ipcMain.handle('hardware:scoreboard-send', async (event, text) => {
+  try {
+    return await hardware.sendRaw(text);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Push current leaderboard to scoreboard on demand
+ipcMain.handle('hardware:scoreboard-push-leaderboard', async (event, courseName) => {
+  try {
+    const lb = raceTiming.getLeaderboard();
+    return await hardware.sendLeaderboard(lb, courseName);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Graceful shutdown
+app.on('before-quit', async () => {
+  if (hardware) await hardware.closeAll();
 });

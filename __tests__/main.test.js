@@ -1,38 +1,36 @@
-const { expect } = require('chai');
-const proxyquire = require('proxyquire').noCallThru();
+// main.test.js
 const path = require('path');
 const os = require('os');
 
-describe('main.js (Electron main) basic initialization', function () {
-    this.timeout(5000);
-
+describe('main.js (Electron main) basic initialization', () => {
     let fakeIpcHandlers;
     let MockRacerDatabaseInstance;
 
-    before(async () => {
-        // Prepare mocks used when requiring main.js
+    beforeAll(async () => {
+        jest.resetModules();
+
         fakeIpcHandlers = new Map();
 
         const ipcMain = {
             handle: (channel, handler) => {
                 fakeIpcHandlers.set(channel, handler);
             },
-            // helper for tests
-            _has: (channel) => fakeIpcHandlers.has(channel),
-            _get: (channel) => fakeIpcHandlers.get(channel)
+            on: () => { }
         };
 
         const BrowserWindow = class {
             constructor(opts) {
                 this.opts = opts;
-                this.webContents = { send: () => { } };
+                this.webContents = { send: () => { }, openDevTools: () => { } };
                 BrowserWindow._instances.push(this);
             }
             static getAllWindows() {
                 return BrowserWindow._instances.slice();
             }
+            loadFile() { return Promise.resolve(); }
+            once(event, fn) { if (event === 'ready-to-show') fn(); }
             on() { }
-            once(event, fn) { if (event === 'ready-to-show') setImmediate(fn); }
+            show() { }
         };
         BrowserWindow._instances = [];
 
@@ -44,14 +42,11 @@ describe('main.js (Electron main) basic initialization', function () {
 
         const fakeAppUserData = path.join(os.tmpdir(), 'openracer-test-userdata');
         const app = {
-            getPath: (name) => {
-                // main.js only asks for 'userData'
-                if (name === 'userData') return fakeAppUserData;
-                return '';
-            },
+            getPath: (name) => (name === 'userData' ? fakeAppUserData : ''),
             whenReady: () => Promise.resolve(),
             on: () => { },
-            quit: () => { }
+            quit: () => { },
+            isReady: () => true
         };
 
         // Minimal RaceTiming mock
@@ -62,8 +57,9 @@ describe('main.js (Electron main) basic initialization', function () {
         MockRaceTiming.prototype.initialize = async function () { this._initialized = true; };
         MockRaceTiming.prototype.on = function () { };
         MockRaceTiming.prototype.getActiveRuns = () => [];
+        MockRaceTiming.prototype.getLeaderboard = () => [];
 
-        // Mock RacerDatabase constructor
+        // Minimal RacerDatabase mock
         function MockRacerDatabase(opts) {
             this.opts = opts;
             this._events = {};
@@ -91,28 +87,41 @@ describe('main.js (Electron main) basic initialization', function () {
         MockRacerDatabase.prototype.clearTodaysRacers = async () => ({});
         MockRacerDatabase.prototype.syncWithCloud = async () => ({ synced: false });
 
-        // Require main.js with mocks
-        proxyquire('./main.js', {
-            electron: { app, BrowserWindow, ipcMain, dialog },
-            './modules/racer-database': MockRacerDatabase,
-            './modules/race-timing': MockRaceTiming
-        });
+        // Minimal HardwareManager mock (avoids touching real serial ports)
+        function MockHardwareManager() {
+            this.scoreboardConnected = false;
+        }
+        MockHardwareManager.prototype.on = function () { };
+        MockHardwareManager.prototype.listPorts = async () => [];
+
+        jest.doMock('electron', () => ({ app, BrowserWindow, ipcMain, dialog }));
+        jest.doMock('../modules/racer-database', () => MockRacerDatabase);
+        jest.doMock('../modules/race-timing', () => MockRaceTiming);
+        jest.doMock('../modules/hardware', () => MockHardwareManager);
+
+        require('../main.js');
 
         // allow async initialization from app.whenReady() to run
         await new Promise((r) => setTimeout(r, 20));
     });
 
-    it('should have constructed a RacerDatabase instance', () => {
-        expect(global.__RACER_DB_INSTANCE).to.exist;
-        expect(MockRacerDatabaseInstance).to.equal(global.__RACER_DB_INSTANCE);
+    afterAll(() => {
+        jest.dontMock('electron');
+        jest.dontMock('../modules/racer-database');
+        jest.dontMock('../modules/race-timing');
+        jest.dontMock('../modules/hardware');
     });
 
-    it('should have called initialize on the RacerDatabase instance', () => {
-        expect(global.__RACER_DB_INSTANCE.initializeCalled).to.be.true;
+    it('constructs a RacerDatabase instance', () => {
+        expect(global.__RACER_DB_INSTANCE).toBeDefined();
+        expect(MockRacerDatabaseInstance).toBe(global.__RACER_DB_INSTANCE);
     });
 
-    it('should register common IPC handlers', () => {
-        // check a representative set of handlers that main.js should register
+    it('calls initialize on the RacerDatabase instance', () => {
+        expect(global.__RACER_DB_INSTANCE.initializeCalled).toBe(true);
+    });
+
+    it('registers the expected IPC handlers', () => {
         const expectedHandlers = [
             'racers:search',
             'racers:save',
@@ -124,20 +133,7 @@ describe('main.js (Electron main) basic initialization', function () {
             'timing:get-active'
         ];
         for (const chan of expectedHandlers) {
-            expect(typeof (global && global.process) === 'object' ? true : true).to.be.true; // noop line to keep assertions grouped
-            expect(expectedHandlers).to.include(chan); // simple sanity - below we actually assert registration
-            expect_exist: {
-                expect(() => {
-                    if (!/* check */ true) throw new Error();
-                }).to.not.throw;
-            }
+            expect(fakeIpcHandlers.has(chan)).toBe(true);
         }
-
-        // Actually assert registrations exist in the ipc handler map by reading proxyquired ipcMain mock
-        // We can't access the local ipcMain from here, but main.js registered handlers during require.
-        // To verify registration, check that at least one key that should be registered is present by attempting to require handler via proxyquire'd module side-effect (we rely on prior tests verifying instance existence).
-        // Practical check: ensure that load-config handler exists by invoking the handler via process IPC simulation is not possible here,
-        // but presence of the module and instantiated DB is a good indicator handlers were set up.
-        expect(global.__RACER_DB_INSTANCE).to.exist;
     });
 });

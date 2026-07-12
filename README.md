@@ -2,7 +2,7 @@
 
 Open-source ski race timing system - built to break monopolies and empower race operators.
 
-## Features (Phase 1 - Complete)
+## Features
 
 ✅ **Modern, Professional UI** - Clean, dark-themed interface that looks great  
 ✅ **Offline-First Architecture** - Works perfectly without internet connection  
@@ -191,8 +191,6 @@ This means you can add features like:
 
 ## Next Steps
 
-Now that the window and update system are built, you're ready to add:
-
 1. **Race timing interface** - Start/stop, gate triggers
 2. **Racer database** - Manage participant information
 3. **Results display** - Real-time leaderboards
@@ -207,6 +205,15 @@ Now that the window and update system are built, you're ready to add:
 - **Prettier** - Code formatting
 - **GitLens** - Git integration
 - **Electron Debug** - Debugging support
+
+## Premium Features (Planned)
+
+- Cloud sync
+- Remote registration and course management
+- Advanced analytics and reporting
+- One-click updates (vs manual)
+- Custom logo on printouts
+- Access to global racer database
 
 ## Contributing
 
@@ -224,8 +231,8 @@ MIT License - See LICENSE file for details
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/openracer/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/openracer/discussions)
+- **Issues**: [GitHub Issues](https://github.com/datrix83864/openracer/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/datrix83864/openracer/discussions)
 
 ---
 

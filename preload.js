@@ -1,8 +1,6 @@
 // preload.js - Bridge between main and renderer process
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected methods that allow the renderer process to use
-// ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   checkInternet: () => ipcRenderer.invoke('check-internet'),
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
@@ -13,67 +11,165 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdateFromFile: () => ipcRenderer.invoke('install-update-from-file')
 });
 
-// Add separate namespace for race timing
 contextBridge.exposeInMainWorld('raceTiming', {
-  // Race session management
-  startRace: (raceId, raceName, courseData) => 
+  startRace: (raceId, raceName, courseData) =>
     ipcRenderer.invoke('timing:start-race', raceId, raceName, courseData),
-  
-  // Run management
-  startRun: (racerId, bibNumber, metadata) => 
+
+  startRun: (racerId, bibNumber, metadata) =>
     ipcRenderer.invoke('timing:start-run', racerId, bibNumber, metadata),
-  
-  finishRun: (racerId, finishTime) => 
+
+  finishRun: (racerId, finishTime) =>
     ipcRenderer.invoke('timing:finish-run', racerId, finishTime),
-  
-  markDNF: (racerId, reason, gate) => 
+
+  markDNF: (racerId, reason, gate) =>
     ipcRenderer.invoke('timing:mark-dnf', racerId, reason, gate),
-  
-  disqualify: (racerId, reason) => 
+
+  disqualify: (racerId, reason) =>
     ipcRenderer.invoke('timing:disqualify', racerId, reason),
-  
-  addPenalty: (racerId, seconds, reason) => 
+
+  addPenalty: (racerId, seconds, reason) =>
     ipcRenderer.invoke('timing:add-penalty', racerId, seconds, reason),
-  
-  // Data retrieval
-  getActiveRuns: () => 
+
+  getActiveRuns: () =>
     ipcRenderer.invoke('timing:get-active'),
-  
-  getCompletedRuns: (sortBy) => 
+
+  getCompletedRuns: (sortBy) =>
     ipcRenderer.invoke('timing:get-completed', sortBy),
-  
-  getLeaderboard: () => 
+
+  getLeaderboard: () =>
     ipcRenderer.invoke('timing:get-leaderboard'),
-  
-  getStatistics: () => 
+
+  getStatistics: () =>
     ipcRenderer.invoke('timing:get-stats'),
-  
-  // Export and reset
-  export: (format) => 
+
+  export: (format) =>
     ipcRenderer.invoke('timing:export', format),
-  
-  reset: () => 
+
+  getAllRuns: () =>
+    ipcRenderer.invoke('timing:get-all-runs'),
+
+  importPackage: () =>
+    ipcRenderer.invoke('timing:import-package'),
+
+  getFormula: () =>
+    ipcRenderer.invoke('scoring:get-formula'),
+
+  setFormula: (config) =>
+    ipcRenderer.invoke('scoring:set-formula', config),
+
+  reset: () =>
     ipcRenderer.invoke('timing:reset'),
-  
-  // Event listeners for real-time updates
+
   onRunStarted: (callback) => {
-    ipcRenderer.on('timing:run-started', (event, run) => callback(run));
-    // Return unsubscribe function
-    return () => ipcRenderer.removeListener('timing:run-started', callback);
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-started', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-started', wrapped);
   },
-  
+
   onRunCompleted: (callback) => {
-    ipcRenderer.on('timing:run-completed', (event, run) => callback(run));
-    return () => ipcRenderer.removeListener('timing:run-completed', callback);
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-completed', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-completed', wrapped);
   },
-  
+
   onRunDNF: (callback) => {
-    ipcRenderer.on('timing:run-dnf', (event, run) => callback(run));
-    return () => ipcRenderer.removeListener('timing:run-dnf', callback);
+    const wrapped = (event, run) => callback(run);
+    ipcRenderer.on('timing:run-dnf', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-dnf', wrapped);
   },
-  
+
   onRunDisqualified: (callback) => {
-    ipcRenderer.on('timing:run-disqualified', (event, data) => callback(data));
-    return () => ipcRenderer.removeListener('timing:run-disqualified', callback);
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('timing:run-disqualified', wrapped);
+    return () => ipcRenderer.removeListener('timing:run-disqualified', wrapped);
+  }
+});
+
+contextBridge.exposeInMainWorld('hardware', {
+  listPorts: () =>
+    ipcRenderer.invoke('hardware:list-ports'),
+
+  openGate: (portPath, baudRate, action) =>
+    ipcRenderer.invoke('hardware:open-gate', portPath, baudRate, action),
+
+  closeGate: () =>
+    ipcRenderer.invoke('hardware:close-gate'),
+
+  openScoreboard: (portPath, baudRate) =>
+    ipcRenderer.invoke('hardware:open-scoreboard', portPath, baudRate),
+
+  closeScoreboard: () =>
+    ipcRenderer.invoke('hardware:close-scoreboard'),
+
+  status: () =>
+    ipcRenderer.invoke('hardware:status'),
+
+  scoreboardSend: (text) =>
+    ipcRenderer.invoke('hardware:scoreboard-send', text),
+
+  scoreboardPushLeaderboard: (courseName) =>
+    ipcRenderer.invoke('hardware:scoreboard-push-leaderboard', courseName),
+
+  onGateTrigger: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-trigger', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-trigger', wrapped);
+  },
+
+  onGateFinish: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-finish', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-finish', wrapped);
+  },
+
+  onGateConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:gate-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-connected', wrapped);
+  },
+
+  onGateDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:gate-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:gate-disconnected', wrapped);
+  },
+
+  onScoreboardConnected: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('hardware:scoreboard-connected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-connected', wrapped);
+  },
+
+  onScoreboardDisconnected: (callback) => {
+    const wrapped = () => callback();
+    ipcRenderer.on('hardware:scoreboard-disconnected', wrapped);
+    return () => ipcRenderer.removeListener('hardware:scoreboard-disconnected', wrapped);
+  },
+});
+
+contextBridge.exposeInMainWorld('racerDB', {
+  search: (query, options) => ipcRenderer.invoke('racers:search', query, options),
+  autocomplete: (query, limit) => ipcRenderer.invoke('racers:autocomplete', query, limit),
+  save: (racerData) => ipcRenderer.invoke('racers:save', racerData),
+  nextBib: () => ipcRenderer.invoke('racers:next-bib'),
+  today: () => ipcRenderer.invoke('racers:today'),
+  needsWaiver: (racerId) => ipcRenderer.invoke('racers:needs-waiver', racerId),
+  signWaiver: (racerId) => ipcRenderer.invoke('racers:sign-waiver', racerId),
+  stats: () => ipcRenderer.invoke('racers:stats'),
+  export: (includeAllHistory) => ipcRenderer.invoke('racers:export', includeAllHistory),
+  import: () => ipcRenderer.invoke('racers:import'),
+  clearToday: () => ipcRenderer.invoke('racers:clear-today'),
+  syncCloud: (options) => ipcRenderer.invoke('racers:sync-cloud', options),
+
+  onRacerSaved: (callback) => {
+    const wrapped = (event, racer) => callback(racer);
+    ipcRenderer.on('racers:racer-saved', wrapped);
+    return () => ipcRenderer.removeListener('racers:racer-saved', wrapped);
+  },
+
+  onBestTimeUpdated: (callback) => {
+    const wrapped = (event, data) => callback(data);
+    ipcRenderer.on('racers:best-time-updated', wrapped);
+    return () => ipcRenderer.removeListener('racers:best-time-updated', wrapped);
   }
 });

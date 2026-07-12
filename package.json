@@ -5,13 +5,16 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "cross-env NODE_ENV=development electron .",
+    "dev": "electron . --dev",
+    "rebuild": "node scripts/rebuild-native.js",
     "build": "electron-builder",
     "build:win": "electron-builder --windows",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:portable": "electron-builder --windows portable",
-    "test": "jest"
+    "test": "jest",
+    "download-libs": "node download-libs.js",
+    "postinstall": "node download-libs.js && node scripts/rebuild-native.js"
   },
   "keywords": [
     "ski",
@@ -23,10 +26,12 @@
   "author": "OpenRacer Contributors",
   "license": "MIT",
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@types/jest": "^30.0.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
-    "jest": "^30.2.0"
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.4.1"
   },
   "build": {
     "appId": "com.openracer.app",
@@ -39,6 +44,8 @@
       "preload.js",
       "renderer.js",
       "index.html",
+      "modules/**/*",
+      "ui/**/*",
       "assets/**/*"
     ],
     "win": {
@@ -80,5 +87,9 @@
     "portable": {
       "artifactName": "OpenRacer-Portable-${version}.exe"
     }
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "serialport": "^13.0.0"
   }
 }
